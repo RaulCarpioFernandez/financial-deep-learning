@@ -1,0 +1,19 @@
+{
+    "Model": "LSTM",
+    "CAGR_Strategy": 0.09361077575777066,
+    "CAGR_ConstLong": 0.08863075202171133,
+    "CAGR_BnH": 0.12829213626587976,
+    "Sharpe_Strategy": 0.8244004526335029,
+    "Sharpe_ConstLong": 0.7190998612846283,
+    "Sharpe_BnH": 0.7190998631193205,
+    "MDD_Strategy": 0.19693982426657103,
+    "MDD_ConstLong": 0.2365329195322108,
+    "MDD_BnH": 0.33924960002653287,
+    "Delta_Util_Strategy": 2.8858859775869714,
+    "Delta_Util_ConstLong": 1.6280051693024373,
+    "BSS": 0.045916997801281,
+    "R2_OOS": -0.006275669442770804,
+    "Gross_Exposure": 0.6686918637937024,
+    "Ann_Turnover": 12.4327143635525,
+    "Total_Costs_Pct": 4.970618937015534
+}

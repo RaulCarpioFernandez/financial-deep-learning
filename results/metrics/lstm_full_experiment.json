@@ -1,0 +1,98 @@
+{
+    "model": "LSTM",
+    "config": {
+        "SEED": 2,
+        "DEVICE": "cpu",
+        "TICKER": "^GSPC",
+        "K": 5,
+        "BASELINE_WINDOW": 60,
+        "SEQUENCE_LENGTH": 20,
+        "N_SPLITS": 4,
+        "TEST_SIZE": 504,
+        "VAL_SIZE": 126,
+        "TRAIN_SIZE": 2016,
+        "WINDOW_TYPE": "expanding",
+        "COST_BPS": 5,
+        "RISK_AVERSION": 6.0
+    },
+    "ml_performance": {
+        "model": "LSTM",
+        "optimal_threshold": 0.504535436630249,
+        "global_auc": 0.6219953833811566,
+        "mean_fold_auc": 0.6330062567419013,
+        "global_accuracy": 0.5739087301587301,
+        "global_balanced_accuracy": 0.5739210253028117,
+        "fold_metrics": [
+            {
+                "fold": 1,
+                "auc": 0.6082526183164029,
+                "acc": 0.5535714285714286,
+                "samples": 504
+            },
+            {
+                "fold": 2,
+                "auc": 0.6464070908515354,
+                "acc": 0.5853174603174603,
+                "samples": 504
+            },
+            {
+                "fold": 3,
+                "auc": 0.6449514486460883,
+                "acc": 0.5674603174603174,
+                "samples": 504
+            },
+            {
+                "fold": 4,
+                "auc": 0.6324138691535784,
+                "acc": 0.5892857142857143,
+                "samples": 504
+            }
+        ],
+        "classification_report": {
+            "Baja/Lateral (0)": {
+                "precision": 0.5803571428571429,
+                "recall": 0.5729676787463271,
+                "f1-score": 0.5766387382947264,
+                "support": 1021.0
+            },
+            "Sube (1)": {
+                "precision": 0.5674603174603174,
+                "recall": 0.5748743718592965,
+                "f1-score": 0.5711432850723914,
+                "support": 995.0
+            },
+            "accuracy": 0.5739087301587301,
+            "macro avg": {
+                "precision": 0.5739087301587302,
+                "recall": 0.5739210253028117,
+                "f1-score": 0.5738910116835589,
+                "support": 2016.0
+            },
+            "weighted avg": {
+                "precision": 0.5739918942113883,
+                "recall": 0.5739087301587301,
+                "f1-score": 0.5739264486339013,
+                "support": 2016.0
+            }
+        }
+    },
+    "financial_performance": {
+        "Model": "LSTM",
+        "CAGR_Strategy": 0.09361077575777066,
+        "CAGR_ConstLong": 0.08863075202171133,
+        "CAGR_BnH": 0.12829213626587976,
+        "Sharpe_Strategy": 0.8244004526335029,
+        "Sharpe_ConstLong": 0.7190998612846283,
+        "Sharpe_BnH": 0.7190998631193205,
+        "MDD_Strategy": 0.19693982426657103,
+        "MDD_ConstLong": 0.2365329195322108,
+        "MDD_BnH": 0.33924960002653287,
+        "Delta_Util_Strategy": 2.8858859775869714,
+        "Delta_Util_ConstLong": 1.6280051693024373,
+        "BSS": 0.045916997801281,
+        "R2_OOS": -0.006275669442770804,
+        "Gross_Exposure": 0.6686918637937024,
+        "Ann_Turnover": 12.4327143635525,
+        "Total_Costs_Pct": 4.970618937015534
+    }
+}

@@ -1,0 +1,98 @@
+{
+    "model": "GRU",
+    "config": {
+        "SEED": 2,
+        "DEVICE": "cpu",
+        "TICKER": "^GSPC",
+        "K": 5,
+        "BASELINE_WINDOW": 60,
+        "SEQUENCE_LENGTH": 20,
+        "N_SPLITS": 4,
+        "TEST_SIZE": 504,
+        "VAL_SIZE": 126,
+        "TRAIN_SIZE": 2016,
+        "WINDOW_TYPE": "expanding",
+        "COST_BPS": 5,
+        "RISK_AVERSION": 6.0
+    },
+    "ml_performance": {
+        "model": "GRU",
+        "optimal_threshold": 0.49450427293777466,
+        "global_auc": 0.6084383720758543,
+        "mean_fold_auc": 0.6245583476067912,
+        "global_accuracy": 0.5848214285714286,
+        "global_balanced_accuracy": 0.5848355391059116,
+        "fold_metrics": [
+            {
+                "fold": 1,
+                "auc": 0.610851248129774,
+                "acc": 0.5456349206349206,
+                "samples": 504
+            },
+            {
+                "fold": 2,
+                "auc": 0.6314181703070592,
+                "acc": 0.6051587301587301,
+                "samples": 504
+            },
+            {
+                "fold": 3,
+                "auc": 0.6308123470434989,
+                "acc": 0.4742063492063492,
+                "samples": 504
+            },
+            {
+                "fold": 4,
+                "auc": 0.6251516249468327,
+                "acc": 0.6011904761904762,
+                "samples": 504
+            }
+        ],
+        "classification_report": {
+            "Baja/Lateral (0)": {
+                "precision": 0.5912698412698413,
+                "recall": 0.5837414299706171,
+                "f1-score": 0.5874815179891573,
+                "support": 1021.0
+            },
+            "Sube (1)": {
+                "precision": 0.5783730158730159,
+                "recall": 0.5859296482412061,
+                "f1-score": 0.582126809785322,
+                "support": 995.0
+            },
+            "accuracy": 0.5848214285714286,
+            "macro avg": {
+                "precision": 0.5848214285714286,
+                "recall": 0.5848355391059116,
+                "f1-score": 0.5848041638872397,
+                "support": 2016.0
+            },
+            "weighted avg": {
+                "precision": 0.5849045926240867,
+                "recall": 0.5848214285714286,
+                "f1-score": 0.5848386932556175,
+                "support": 2016.0
+            }
+        }
+    },
+    "financial_performance": {
+        "Model": "GRU",
+        "CAGR_Strategy": 0.07985234206896363,
+        "CAGR_ConstLong": 0.0841974025000034,
+        "CAGR_BnH": 0.12829213626587976,
+        "Sharpe_Strategy": 0.7200803619774144,
+        "Sharpe_ConstLong": 0.7190998609742794,
+        "Sharpe_BnH": 0.7190998631193205,
+        "MDD_Strategy": 0.22667925671093642,
+        "MDD_ConstLong": 0.22495989852263382,
+        "MDD_BnH": 0.33924960002653287,
+        "Delta_Util_Strategy": 1.6651585234459543,
+        "Delta_Util_ConstLong": 1.6551257826958248,
+        "BSS": 0.032416005956751426,
+        "R2_OOS": -0.01377695926996525,
+        "Gross_Exposure": 0.6332053165823696,
+        "Ann_Turnover": 12.732878495398584,
+        "Total_Costs_Pct": 5.090625033378601
+    }
+}
