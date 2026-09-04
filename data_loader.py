@@ -12,7 +12,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 def get_clean_df(ticker, start=START_DATE, end=END_DATE):
     # Limpiamos el nombre del ticker para el archivo (por ejemplo, ^GSPC -> GSPC.csv)
     safe_name = ticker.replace("^", "")
-    file_path = os.path.join(DATA_DIR, f"{safe_name}_{start[:4]}.csv")
+    file_path = os.path.join(DATA_DIR, f"{safe_name}_{start.replace('-', '')}_{end.replace('-', '')}.csv")
     # 1. Si ya existe en disco, se carga directamente
     if os.path.exists(file_path):
         print(f"Cargando {ticker} desde caché local...")
@@ -88,6 +88,7 @@ def load_and_preprocess_data():
     df['HighLowRange'] = (df['High'] - df['Low']) / df['Close']
     df['OpenCloseReturn'] = (df['Close'] - df['Open']) / df['Open']
 
+    
     df['Volume'] = df['Volume'].replace(0, np.nan).ffill().fillna(1)
     vol_sma20 = df['Volume'].rolling(window=20).mean()
     df['VolumeToSMA20'] = df['Volume'] / vol_sma20 - 1
@@ -114,7 +115,8 @@ def load_and_preprocess_data():
     
     # --- TARGET RELATIVO A LA MEDIANA HISTÓRICA ---
     df['FutureReturn_K'] = np.log(df['Close'].shift(-K) / df['Close'])
-    df['Baseline_Return'] = df['Log_Return_5'].rolling(window=BASELINE_WINDOW).median()
+    df['Log_Return_K'] = np.log(df['Close']) - np.log(df['Close'].shift(K))
+    df['Baseline_Return'] = df['Log_Return_K'].rolling(window=BASELINE_WINDOW).median()
     df['Excess_Return_K'] = df['FutureReturn_K'] - df['Baseline_Return']
     df['Target'] = (df['Excess_Return_K'] > 0).astype(int)
 
