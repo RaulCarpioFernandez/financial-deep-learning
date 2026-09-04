@@ -155,7 +155,7 @@ def run_economic_backtest(df_total, df_test, test_probs, cost_bps=5, risk_aversi
     print("─" * 86)
     print(f" {'MÉTRICA FINANCIERA':<28} │ {'ESTRATEGIA IA':>15} │ {f'CONST. LONG ({gross_exposure*100:.0f}%)':>16} │ {'S&P 500 (100%)':>16}")
     print("─" * 86)
-    print(f" {'CAGR (Rentabilidad Compuesta)':<28} │ {cagr_strat*100:>14.2f}% │ {cagr_lon*100:>15.2f}% │ {cagr_bnh*100:>15.2f}%")
+    print(f" {'CAGR (Rentabilidad Compuesta)':<28}│ {cagr_strat*100:>14.2f}% │ {cagr_lon*100:>15.2f}% │ {cagr_bnh*100:>15.2f}%")
     print(f" {'Retorno Aritmético Anual':<28} │ {ann_ret_strat*100:>14.2f}% │ {ann_ret_lon*100:>15.2f}% │ {ann_ret_bnh*100:>15.2f}%")
     print(f" {'Volatilidad Anualizada (σ)':<28} │ {ann_vol_strat*100:>14.2f}% │ {ann_vol_lon*100:>15.2f}% │ {ann_vol_bnh*100:>15.2f}%")
     print(f" {'Ratio de Sharpe (Rf = 0)':<28} │ {sharpe_strat:>15.3f} │ {sharpe_lon:>16.3f} │ {sharpe_bnh:>16.3f}")
@@ -166,7 +166,7 @@ def run_economic_backtest(df_total, df_test, test_probs, cost_bps=5, risk_aversi
     print(f" {'Ganancia Utilidad (ΔU / CER)':<28} │ {delta_util_strat:>+14.2f}% │ {delta_util_lon:>+15.2f}% │ {'0.00% (Base)':>16}")
     print(f" {'Brier Skill Score (BSS)':<28} │ {bss:>+15.4f} │ {'N/A (Estático)':>16} │ {'0.0000 (Base)':>16}")
     print(f" {'R² Fuera de Muestra (C&T)':<28} │ {r2_oos:>15.4f} │ {'N/A (Estático)':>16} │ {'0.0000 (Base)':>16}")
-    print("═" * 86 + "\n")
+    print("═" * 86)
     
     # Gráficas
     if plot_curves:
