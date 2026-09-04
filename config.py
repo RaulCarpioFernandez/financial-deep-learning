@@ -5,7 +5,7 @@ SEED = 2
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 TICKER = "^GSPC"  # S&P 500
 
-# Parámetros Temporales y Target
+# Hiperparámetros Temporales y Target
 K = 5
 BASELINE_WINDOW = 60
 SEQUENCE_LENGTH = 20
@@ -38,6 +38,8 @@ def get_config_dict():
         'DEVICE': str(DEVICE),
         'TICKER': TICKER,
         'K': K,
+        'START_DATE':START_DATE, 
+        'END_DATE':END_DATE, 
         'BASELINE_WINDOW': BASELINE_WINDOW,
         'SEQUENCE_LENGTH': SEQUENCE_LENGTH,
         'N_SPLITS': N_SPLITS,
