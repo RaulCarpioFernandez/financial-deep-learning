@@ -22,12 +22,12 @@ def main(model_name='lstm'):
     df = load_and_preprocess_data()
     
     # Motor Purged Walk-Forward
-    print(f"[INFO] Ejecutando Purged Walk-Forward para modelo: {model_name.upper()}...")
-    df_wf_test, wf_probs, wf_reals, fold_metrics = run_purged_walk_forward(
+    print(f"\n[INFO] Ejecutando Purged Walk-Forward para modelo: {model_name.upper()}...")
+    df_wf_test, wf_probs, wf_reals, fold_metrics, trainable_params = run_purged_walk_forward(
         df=df,
         feature_cols=FEATURE_COLS,
         model_name=model_name,
-        K=K,
+        k=K,
         seq_length=SEQUENCE_LENGTH,
         n_splits=N_SPLITS,
         train_size=TRAIN_SIZE,
@@ -37,18 +37,19 @@ def main(model_name='lstm'):
     )
 
     # Evaluación de Machine Learning (devuelve diccionario de métricas)
-    print(f"[INFO] Evaluando métricas de Machine Learning...")
+    print(f"\n[INFO] Evaluando métricas de Machine Learning...")
     ml_results = evaluate_ml_performance(
         wf_reals=wf_reals, 
         wf_probs=wf_probs, 
         fold_metrics=fold_metrics,
         model_name=model_name,
+        trainable_params=trainable_params,
         plot_curves=True,
         save_results=True
     )
 
     # Backtest Económico (devuelve DataFrame y diccionario financiero)
-    print(f"[INFO] Ejecutando backtesting económico multi-benchmark...")
+    print(f"\n[INFO] Ejecutando backtesting económico multi-benchmark...")
     backtest_results, financial_results = run_economic_backtest(
         df_total=df, 
         df_test=df_wf_test, 
@@ -72,7 +73,7 @@ def main(model_name='lstm'):
     with open(full_json_path, 'w', encoding='utf-8') as f:
         json.dump(full_experiment, f, indent=4, ensure_ascii=False)
         
-    print(f"\n[INFO] Registro completo del experimento guardado en: {full_json_path}")
+    print(f"[INFO] Registro completo del experimento guardado en: {full_json_path}\n")
 
 if __name__ == '__main__':
-    main(model_name='gru')
+    main(model_name='TCN')
