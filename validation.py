@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler
-from models import get_model
-from config import DEVICE, SEQUENCE_LENGTH, K, FIGURES_DIR, METRICS_DIR, MODELS_DIR
+from models import get_model, count_parameters
+from config import DEVICE, FIGURES_DIR, METRICS_DIR, MODELS_DIR
 import matplotlib.pyplot as plt
 from sklearn.metrics import (
     accuracy_score, balanced_accuracy_score, roc_auc_score, 
@@ -28,7 +28,7 @@ def create_sequences(X_data, y_data, seq_length=20):
 # ==============================================================================
 # MOTOR DE VALIDACIÓN PURGED WALK-FORWARD
 # ==============================================================================
-def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', K=5, seq_length=SEQUENCE_LENGTH, n_splits=4, train_size = 2016, test_size=504, val_size=126, window_type='expanding'):
+def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', k=5, seq_length=20, n_splits=4, train_size = 2016, test_size=504, val_size=126, window_type='expanding'):
     """
     Ejecuta Purged Walk-Forward CV con Rolling o Expanding Window
     
@@ -37,7 +37,7 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', K=5, seq_leng
     train_size : Número de sesiones fijas de entrenamiento (ej. 2016 = ~8 años, 2520 = ~10 años)
     test_size  : Sesiones por bloque de test ciego (ej. 504 = ~2 años)
     val_size   : Sesiones para Early Stopping (ej. 126 = ~6 meses)
-    K          : Purging gap para evitar data leakage
+    k          : Purging gap para evitar data leakage
     """
     if window_type not in ['expanding', 'rolling']:
         raise ValueError(
@@ -48,7 +48,7 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', K=5, seq_leng
     total_len = len(df)
 
     # Verificación de datos mínimos necesarios
-    required_len = (n_splits * test_size) + val_size + (2 * K) + (train_size if window_type == 'rolling' else 500)
+    required_len = (n_splits * test_size) + val_size + (2 * k) + (train_size if window_type == 'rolling' else 500)
     if total_len < required_len:
         raise ValueError(
             f"Longitud insuficiente ({total_len} sesiones). Se requieren al menos {required_len} "
@@ -64,8 +64,10 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', K=5, seq_leng
 
     print("\n" + "═" * 78)
     print(f"{'INICIANDO PURGED WALK-FORWARD CROSS-VALIDATION':^78}")
-    print(f"{f'({window_header} │ {n_splits} Pliegues │ Val: {val_size}d │ Test: {test_size}d │ Gap: {K}d)':^78}")
+    print(f"{f'({window_header} │ {n_splits} Pliegues │ Val: {val_size}d │ Test: {test_size}d │ Gap: {k}d)':^78}")
     print("═" * 78)
+
+    val_auc_folds = []
 
     for fold in range(n_splits):
         # Definición de límites temporales del pliegue
@@ -73,10 +75,10 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', K=5, seq_leng
         test_end = total_len - (n_splits - 1 - fold) * test_size
         test_start = test_end - test_size
 
-        val_end = test_start - K        # Purging Gap 2 entre Val y Test
+        val_end = test_start - k        # Purging Gap 2 entre Val y Test
         val_start = val_end - val_size
 
-        train_end = val_start - K       # Purging Gap 1 entre Train y Val
+        train_end = val_start - k       # Purging Gap 1 entre Train y Val
         train_start = 0 if window_type == 'expanding' else train_end - train_size  # <<--- Ventana deslizante o expansiva
 
         train_dates = f"{df.index[train_start].strftime('%Y-%m')} a {df.index[train_end].strftime('%Y-%m')}"
@@ -105,9 +107,9 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', K=5, seq_leng
         X_test_scaled = scaler.transform(X_test_hist)
 
         # Generamos las secuencias
-        X_train_seq, y_train_seq = create_sequences(X_train_scaled, y_train_hist, seq_length=SEQUENCE_LENGTH)
-        X_val_seq, y_val_seq = create_sequences(X_val_scaled, y_val_hist, seq_length=SEQUENCE_LENGTH)
-        X_test_seq, y_test_seq = create_sequences(X_test_scaled, y_test_hist, seq_length=SEQUENCE_LENGTH)
+        X_train_seq, y_train_seq = create_sequences(X_train_scaled, y_train_hist, seq_length=seq_length)
+        X_val_seq, y_val_seq = create_sequences(X_val_scaled, y_val_hist, seq_length=seq_length)
+        X_test_seq, y_test_seq = create_sequences(X_test_scaled, y_test_hist, seq_length=seq_length)
 
         # Tensores y DataLoader
         X_train_t = torch.tensor(X_train_seq, dtype=torch.float32)
@@ -121,12 +123,15 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', K=5, seq_leng
 
         # Modelo y Optimización del Pliegue
         model = get_model(model_name, input_dim=len(feature_cols)).to(DEVICE)
+        trainable_params = count_parameters(model)
+
         # Cálculo del balance en Train para calcular la pérdida ponderada
         num_pos = np.sum(y_raw[train_start:train_end] == 1)
         num_neg = np.sum(y_raw[train_start:train_end] == 0)
         pos_weight = torch.tensor([num_neg / (num_pos + 1e-9)], dtype=torch.float32).to(DEVICE)
         criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
+        #Definimos el optimizador y el scheduler del learning rate
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0005, weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
 
@@ -161,7 +166,7 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', K=5, seq_leng
             scheduler.step(val_auc)
 
             if (epoch + 1) % 2 == 0 or epoch == 0:
-                print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f}")
+                print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f} | Val AUC: {val_auc:.4f}")
 
             if val_auc > best_val_auc:
                 best_val_auc = val_auc
@@ -172,8 +177,10 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', K=5, seq_leng
                 if patience_counter >= patience:
                     print(f"Early stopping en época {epoch+1}")
                     break
-
+            
+        val_auc_folds.append(best_val_auc)
         model.load_state_dict(best_model_weights)
+        
 
         # Guardar pesos en /results/models
         os.makedirs(MODELS_DIR, exist_ok=True)
@@ -201,14 +208,18 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', K=5, seq_leng
         all_test_reals.extend(y_test_real)
 
     # 8. Consolidación Global
+    mean_val_auc = np.mean(val_auc_folds)
     df_wf_test = df.loc[all_test_indices].copy()
     wf_probs = np.array(all_test_probs, dtype=np.float64)
     wf_reals = np.array(all_test_reals, dtype=np.int32)
 
-    return df_wf_test, wf_probs, wf_reals, fold_metrics
+    print("")
+    print(f"Validation ROC-AUC medio: {mean_val_auc:.4f}")
+
+    return df_wf_test, wf_probs, wf_reals, fold_metrics, trainable_params
 
 
-def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm', plot_curves=True, save_results=True):
+def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm', trainable_params=0, plot_curves=True, save_results=True):
     """
     Calcula, imprime y grafica el rendimiento global fuera de muestra del modelo de ML.
     """
@@ -234,6 +245,7 @@ def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm',
     print("\n" + "═" * 78)
     print(f"{'EVALUACIÓN GLOBAL DE MACHINE LEARNING (CONCATENACIÓN WALK-FORWARD)':^78}")
     print("═" * 78)
+    print(f" Parámetros Entrenables      : {trainable_params:,} pesos")
     print(f" Muestras Totales Acumuladas : {len(wf_reals)} sesiones | Umbral de Decisión (Calibrado): {optimal_threshold:.2f}")
     print(f" ROC-AUC Global              : {global_auc:.4f} (Promedio entre pliegues: {np.mean([m['auc'] for m in fold_metrics]):.4f})")
     print(f" Accuracy / Balanced Acc     : {global_acc*100:.2f}% / {global_balanced_acc*100:.2f}%")
@@ -282,7 +294,7 @@ def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm',
         if save_results:
             fig_path = os.path.join(FIGURES_DIR, f'{model_name.lower()}_roc_pr_curves.png')
             plt.savefig(fig_path, dpi=300, bbox_inches='tight')
-            print(f"[INFO] Gráficos guardados en: {fig_path}")
+            print(f"[INFO] Gráficos de ML guardados en: {fig_path}")
 
         plt.tight_layout()
         plt.show()
@@ -290,6 +302,7 @@ def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm',
     # Empaquetado y guardado estructurado de métricas
     ml_results = {
         'model': model_name.upper(),
+        'trainable_params': trainable_params,
         'optimal_threshold': optimal_threshold,
         'global_auc': global_auc,
         'mean_fold_auc': mean_fold_auc,
@@ -308,6 +321,7 @@ def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm',
         # Guardar resumen tabular en CSV
         df_summary = pd.DataFrame([{
             'Model': model_name.upper(),
+            'Trainable_Params': trainable_params,
             'Global_AUC': global_auc,
             'Mean_Fold_AUC': mean_fold_auc,
             'Accuracy': global_acc,
@@ -318,18 +332,18 @@ def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm',
         }])
         csv_path = os.path.join(METRICS_DIR, f'{model_name.lower()}_ml_summary.csv')
         df_summary.to_csv(csv_path, index=False)
-        print(f"[INFO] Métricas guardadas en: {json_path} y {csv_path}")
+        print(f"[INFO] Métricas de ML guardadas en: {json_path} y {csv_path}")
 
     return ml_results
 
 
 # MOSTRAMOS POR CONSOLA LA DISTRIBUCIÓN DE TARGETS Y DE CLASES
-def print_distributions(df):
+def print_distributions(df, k=5):
     n = len(df)
     train_end = int(n * 0.70)
-    val_start = train_end + K
+    val_start = train_end + k
     val_end = int(n * 0.85)
-    test_start = val_end + K
+    test_start = val_end + k
 
     print("\n" + "=" * 60)
     print("DISTRIBUCIÓN DE TARGETS")
