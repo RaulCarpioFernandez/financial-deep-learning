@@ -1,0 +1,117 @@
+{
+    "model": "TCN",
+    "best_config": {
+        "num_channels": [
+            32,
+            32,
+            16,
+            16
+        ],
+        "kernel_size": 3,
+        "dense_dim": 16,
+        "dropout": 0.2
+    },
+    "val_auc_mean": 0.6103604526972995,
+    "val_auc_std": 0.010990335203673209,
+    "test_auc_mean": 0.6137475821812293,
+    "test_auc_std": 0.003855707378545344,
+    "representative_seed": 42,
+    "global_config": {
+        "SEED": 42,
+        "DEVICE": "cuda",
+        "TICKER": "^GSPC",
+        "K": 5,
+        "START_DATE": "2000-01-01",
+        "END_DATE": "2026-05-01",
+        "BASELINE_WINDOW": 60,
+        "SEQUENCE_LENGTH": 20,
+        "N_SPLITS": 4,
+        "TEST_SIZE": 504,
+        "VAL_SIZE": 126,
+        "TRAIN_SIZE": 2016,
+        "WINDOW_TYPE": "expanding",
+        "COST_BPS": 5,
+        "RISK_AVERSION": 6.0
+    },
+    "ml_performance_rep_seed": {
+        "model": "TCN",
+        "trainable_params": 16721,
+        "optimal_threshold": 0.489347442984581,
+        "global_auc": 0.615515382987415,
+        "mean_fold_auc": 0.6217593954330392,
+        "global_accuracy": 0.595734126984127,
+        "global_balanced_accuracy": 0.5957500529090113,
+        "fold_metrics": [
+            {
+                "fold": 1,
+                "auc": 0.6114654697220254,
+                "acc": 0.5793650793650794,
+                "samples": 504
+            },
+            {
+                "fold": 2,
+                "auc": 0.6278410889522001,
+                "acc": 0.5873015873015873,
+                "samples": 504
+            },
+            {
+                "fold": 3,
+                "auc": 0.6299834214889082,
+                "acc": 0.5873015873015873,
+                "samples": 504
+            },
+            {
+                "fold": 4,
+                "auc": 0.6177476015690229,
+                "acc": 0.5912698412698413,
+                "samples": 504
+            }
+        ],
+        "classification_report": {
+            "Baja/Lateral (0)": {
+                "precision": 0.6021825396825397,
+                "recall": 0.594515181194907,
+                "f1-score": 0.598324297683588,
+                "support": 1021.0
+            },
+            "Sube (1)": {
+                "precision": 0.5892857142857143,
+                "recall": 0.5969849246231156,
+                "f1-score": 0.5931103344982526,
+                "support": 995.0
+            },
+            "accuracy": 0.595734126984127,
+            "macro avg": {
+                "precision": 0.595734126984127,
+                "recall": 0.5957500529090113,
+                "f1-score": 0.5957173160909203,
+                "support": 2016.0
+            },
+            "weighted avg": {
+                "precision": 0.5958172910367852,
+                "recall": 0.595734126984127,
+                "f1-score": 0.5957509378773337,
+                "support": 2016.0
+            }
+        }
+    },
+    "financial_performance_rep_seed": {
+        "Model": "TCN",
+        "CAGR_Strategy": 0.07652485651350616,
+        "CAGR_ConstLong": 0.0852163243147217,
+        "CAGR_BnH": 0.12829213626587976,
+        "Sharpe_Strategy": 0.6838099033053862,
+        "Sharpe_ConstLong": 0.7190998610484315,
+        "Sharpe_BnH": 0.7190998631193205,
+        "MDD_Strategy": 0.2519455501005412,
+        "MDD_ConstLong": 0.2276216990901261,
+        "MDD_BnH": 0.33924960002653287,
+        "Delta_Util_Strategy": 1.2404103891330702,
+        "Delta_Util_ConstLong": 1.6514274972708298,
+        "BSS": 0.03888608258554571,
+        "R2_OOS": -0.013840761984095895,
+        "Gross_Exposure": 0.6413372948529229,
+        "Ann_Turnover": 14.278628871009014,
+        "Total_Costs_Pct": 5.708618487119675
+    }
+}

@@ -1,0 +1,23 @@
+{
+    "Model": "TCN",
+    "CAGR_Strategy": 0.07652485651350616,
+    "CAGR_ConstLong": 0.0852163243147217,
+    "CAGR_BnH": 0.12829213626587976,
+    "Ann_Return_Strategy": 0.08073875572825744,
+    "Ann_Vol_Strategy": 0.11807193001179744,
+    "Sharpe_Strategy": 0.6838099033053862,
+    "Sharpe_ConstLong": 0.7190998610484315,
+    "Sharpe_BnH": 0.7190998631193205,
+    "MDD_Strategy": 0.2519455501005412,
+    "MDD_ConstLong": 0.2276216990901261,
+    "MDD_BnH": 0.33924960002653287,
+    "Skewness_Strategy": -0.6646367706137978,
+    "Kurtosis_Strategy": 8.268934842643043,
+    "Delta_Util_Strategy": 1.2404103891330702,
+    "Delta_Util_ConstLong": 1.6514274972708298,
+    "BSS": 0.03888608258554571,
+    "R2_OOS": -0.013840761984095895,
+    "Gross_Exposure": 0.6413372948529229,
+    "Ann_Turnover": 14.278628871009014,
+    "Total_Costs_Pct": 5.708618487119675
+}

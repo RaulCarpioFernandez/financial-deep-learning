@@ -1,0 +1,101 @@
+{
+    "model": "TCN",
+    "config": {
+        "SEED": 2,
+        "DEVICE": "cpu",
+        "TICKER": "^GSPC",
+        "K": 5,
+        "START_DATE": "2000-01-01",
+        "END_DATE": "2026-05-01",
+        "BASELINE_WINDOW": 60,
+        "SEQUENCE_LENGTH": 20,
+        "N_SPLITS": 4,
+        "TEST_SIZE": 504,
+        "VAL_SIZE": 126,
+        "TRAIN_SIZE": 2016,
+        "WINDOW_TYPE": "expanding",
+        "COST_BPS": 5,
+        "RISK_AVERSION": 6.0
+    },
+    "ml_performance": {
+        "model": "TCN",
+        "trainable_params": 5409,
+        "optimal_threshold": 0.48484955728054047,
+        "global_auc": 0.604882886518784,
+        "mean_fold_auc": 0.6117088457844657,
+        "global_accuracy": 0.5749007936507936,
+        "global_balanced_accuracy": 0.5749132538303663,
+        "fold_metrics": [
+            {
+                "fold": 1,
+                "auc": 0.6328766044570439,
+                "acc": 0.5535714285714286,
+                "samples": 504
+            },
+            {
+                "fold": 2,
+                "auc": 0.6283000949667616,
+                "acc": 0.6051587301587301,
+                "samples": 504
+            },
+            {
+                "fold": 3,
+                "auc": 0.5654693297544802,
+                "acc": 0.5079365079365079,
+                "samples": 504
+            },
+            {
+                "fold": 4,
+                "auc": 0.6201893539595773,
+                "acc": 0.5932539682539683,
+                "samples": 504
+            }
+        ],
+        "classification_report": {
+            "Baja/Lateral (0)": {
+                "precision": 0.5813492063492064,
+                "recall": 0.5739471106758081,
+                "f1-score": 0.5776244455396747,
+                "support": 1021.0
+            },
+            "Sube (1)": {
+                "precision": 0.5684523809523809,
+                "recall": 0.5758793969849246,
+                "f1-score": 0.5721417873190214,
+                "support": 995.0
+            },
+            "accuracy": 0.5749007936507936,
+            "macro avg": {
+                "precision": 0.5749007936507937,
+                "recall": 0.5749132538303663,
+                "f1-score": 0.5748831164293481,
+                "support": 2016.0
+            },
+            "weighted avg": {
+                "precision": 0.5749839577034518,
+                "recall": 0.5749007936507936,
+                "f1-score": 0.5749184708722392,
+                "support": 2016.0
+            }
+        }
+    },
+    "financial_performance": {
+        "Model": "TCN",
+        "CAGR_Strategy": 0.0805530977934601,
+        "CAGR_ConstLong": 0.08675970259133403,
+        "CAGR_BnH": 0.12829213626587976,
+        "Sharpe_Strategy": 0.7579484412821993,
+        "Sharpe_ConstLong": 0.719099861157471,
+        "Sharpe_BnH": 0.7190998631193205,
+        "MDD_Strategy": 0.17133069700675882,
+        "MDD_ConstLong": 0.23165133186444087,
+        "MDD_BnH": 0.33924960002653287,
+        "Delta_Util_Strategy": 2.058892357279514,
+        "Delta_Util_ConstLong": 1.642953606457219,
+        "BSS": 0.03279312953881741,
+        "R2_OOS": -0.00401465316763594,
+        "Gross_Exposure": 0.6536819941231183,
+        "Ann_Turnover": 15.344225975017693,
+        "Total_Costs_Pct": 6.134645900726318
+    }
+}
