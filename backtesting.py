@@ -201,27 +201,31 @@ def run_economic_backtest(df_total, df_test, test_probs, cost_bps=5, risk_aversi
 
     # 8. Guardado Estructurado de Métricas Económicas
     summary_data = {}
+    
+    summary_data = {
+        'Model': model_name.upper(),
+        'CAGR_Strategy': cagr_strat,
+        'CAGR_ConstLong': cagr_lon,
+        'CAGR_BnH': cagr_bnh,
+        'Ann_Return_Strategy': ann_ret_strat,       
+        'Ann_Vol_Strategy': ann_vol_strat,         
+        'Sharpe_Strategy': sharpe_strat,
+        'Sharpe_ConstLong': sharpe_lon,
+        'Sharpe_BnH': sharpe_bnh,
+        'MDD_Strategy': mdd_strat,
+        'MDD_ConstLong': mdd_lon,
+        'MDD_BnH': mdd_bnh,
+        'Skewness_Strategy': skew_strat,           
+        'Kurtosis_Strategy': kurt_strat,           
+        'Delta_Util_Strategy': delta_util_strat,
+        'Delta_Util_ConstLong': delta_util_lon,
+        'BSS': bss,
+        'R2_OOS': r2_oos,
+        'Gross_Exposure': gross_exposure,
+        'Ann_Turnover': ann_turnover,
+        'Total_Costs_Pct': total_costs_pct
+    }
     if save_results:
-        summary_data = {
-            'Model': model_name.upper(),
-            'CAGR_Strategy': cagr_strat,
-            'CAGR_ConstLong': cagr_lon,
-            'CAGR_BnH': cagr_bnh,
-            'Sharpe_Strategy': sharpe_strat,
-            'Sharpe_ConstLong': sharpe_lon,
-            'Sharpe_BnH': sharpe_bnh,
-            'MDD_Strategy': mdd_strat,
-            'MDD_ConstLong': mdd_lon,
-            'MDD_BnH': mdd_bnh,
-            'Delta_Util_Strategy': delta_util_strat,
-            'Delta_Util_ConstLong': delta_util_lon,
-            'BSS': bss,
-            'R2_OOS': r2_oos,
-            'Gross_Exposure': gross_exposure,
-            'Ann_Turnover': ann_turnover,
-            'Total_Costs_Pct': total_costs_pct
-        }
-        
         # Guardar JSON completo
         json_path = os.path.join(METRICS_DIR, f'{model_name.lower()}_financial_metrics.json')
         with open(json_path, 'w', encoding='utf-8') as f:

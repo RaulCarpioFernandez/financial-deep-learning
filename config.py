@@ -6,18 +6,11 @@ SEED = 42
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 TICKER = "^GSPC"  # S&P 500
 
-# Mejor configuración obtenida del Grid Search para cada modelo
-BEST_TCN_CONFIG = {
-    'num_channels': (32, 32, 32),
-    'kernel_size': 3,
-    'dense_dim': 16,
-    'dropout': 0.2
-}
-BEST_LSTM_CONFIG = {
-    'hidden_dim': 32,
-    'dense_dim': 16,
-    'dropout': 0.2
-}
+# Mejor configuración obtenida del Grid Search para cada modelo (intentando que todas tengan misma cantidad de parámetros)
+BEST_TCN_CONFIG = {'num_channels': (32, 32, 16, 16), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2}
+BEST_LSTM_CONFIG = {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2}
+BEST_GRU_CONFIG = {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2}
+
 
 # Hiperparámetros Temporales y Target
 K = 5
@@ -47,7 +40,6 @@ DATA_DIR = 'data'
 # Configuraciones para el grid-search
 TCN_CONFIGS = [
     # 1. Compactas / Regularizadas (Poco riesgo de sobreajuste)
-    {'num_channels': (16, 8), 'kernel_size': 3, 'dense_dim': 8, 'dropout': 0.2}, # Modelo ultraligero
     {'num_channels': (16, 16, 16), 'kernel_size': 3, 'dense_dim': 8, 'dropout': 0.2},
     {'num_channels': (32, 16, 8),   'kernel_size': 3, 'dense_dim': 8, 'dropout': 0.2},  # Pirámide descendente
 
@@ -67,20 +59,46 @@ TCN_CONFIGS = [
     {'num_channels': (32, 32, 16, 16), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2}
 ]
 
-
 LSTM_CONFIGS = [
-    {'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.1},
-    {'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2},
-    {'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.3},
-    {'hidden_dim': 32, 'dense_dim': 8, 'dropout': 0.2},
-    {'hidden_dim': 32, 'dense_dim': 8, 'dropout': 0.3},
-    {'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.1},
-    {'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.2},
-    {'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.3},
-    {'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.2},
-    {'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.3},
-    {'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.2},
-    {'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3}
+    # 1. Una capa - Compactas / Regularizadas (Control de sobreajuste)
+    {'num_layers': 1, 'hidden_dim': 16, 'dense_dim': 8,  'dropout': 0.2},
+    {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 8,  'dropout': 0.2},
+    
+    # 2. Una capa - Capacidad media y alta
+    {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.2},
+    {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.3},
+    {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.2},
+    {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3},
+
+    # 3. Dos capas apiladas (Stacked LSTM - Abstracción temporal profunda)
+    {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2},
+    {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 8, 'dropout': 0.2},
+    {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.2},
+    {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.3},
+    {'num_layers': 2, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.3}
+]
+
+
+GRU_CONFIGS = [
+    # 1. Una capa - Compactas / Regularizadas (1.9k - 5.6k pesos)
+    {'num_layers': 1, 'hidden_dim': 16, 'dense_dim': 8,  'dropout': 0.2},
+    {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 8,  'dropout': 0.2},
+    
+    # 2. Una capa - Capacidad media y alta (5.6k - 18.4k pesos)
+    {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.2},
+    {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.3},
+    {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.2},  # ~17.4k pesos
+    {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3},  # ~18.4k pesos
+
+    # 3. Dos capas apiladas - Simétricas con LSTM (3.5k - 12k pesos)
+    {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8,  'dropout': 0.2},
+    {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 8,  'dropout': 0.2},  # ~11.7k pesos
+    {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.2},  # ~12.0k pesos
+    {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.3},
+    
+    # 4. Dos capas - Paridad paramétrica exacta con LSTM (~15k-18k) y alta capacidad
+    {'num_layers': 2, 'hidden_dim': 40, 'dense_dim': 8,  'dropout': 0.2},  # ~17.5k pesos (Paridad exacta TCN/LSTM)
+    {'num_layers': 2, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.3}   # ~42.3k pesos (Techo de capacidad)
 ]
 
 

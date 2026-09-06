@@ -7,9 +7,11 @@ from torch.nn.utils.parametrizations import weight_norm
 
 # Arquitectura de la red LSTM
 class LSTM_Classifier(nn.Module):
-    def __init__(self, input_dim, hidden_dim=32, dense_dim=16, output_dim=1, dropout=0.3):
+    def __init__(self, input_dim, hidden_dim=32, dense_dim=16, output_dim=1, num_layers=1, dropout=0.3):
         super(LSTM_Classifier, self).__init__()
-        self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=1, batch_first=True, bidirectional=False)
+        # PyTorch solo aplica el dropout interno de nn.LSTM si num_layers > 1
+        lstm_dropout = dropout if num_layers > 1 else 0.0
+        self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=lstm_dropout, bidirectional=False)
         self.dropout = nn.Dropout(dropout)
         self.fc1 = nn.Linear(hidden_dim, dense_dim)
         self.act = nn.LeakyReLU(negative_slope=0.01)
@@ -26,9 +28,11 @@ class LSTM_Classifier(nn.Module):
 
 # Arquitectura de la red GRU
 class GRU_Classifier(nn.Module):
-    def __init__(self, input_dim, hidden_dim=16, dense_dim=8, output_dim=1, dropout=0.3):
+    def __init__(self, input_dim, hidden_dim=32, dense_dim=16, output_dim=1, num_layers=1, dropout=0.3):
         super(GRU_Classifier, self).__init__()
-        self.gru = nn.GRU(input_size=input_dim, hidden_size=hidden_dim, num_layers=1, batch_first=True, bidirectional=False)
+        # PyTorch solo aplica el dropout interno de nn.GRU si num_layers > 1
+        lstm_dropout = dropout if num_layers > 1 else 0.0
+        self.gru = nn.GRU(input_size=input_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=lstm_dropout, bidirectional=False)
         self.dropout = nn.Dropout(dropout)
         self.fc1 = nn.Linear(hidden_dim, dense_dim)
         self.act = nn.LeakyReLU(negative_slope=0.01)

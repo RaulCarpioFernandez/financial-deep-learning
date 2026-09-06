@@ -66,10 +66,11 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
 
     window_header = f"ROLLING WINDOW ({train_size}d)" if window_type == 'rolling' else "EXPANDING WINDOW"
 
-    print("\n" + "═" * 78)
-    print(f"{'INICIANDO PURGED WALK-FORWARD CROSS-VALIDATION':^78}")
-    print(f"{f'({window_header} │ {n_splits} Pliegues │ Val: {val_size}d │ Test: {test_size}d │ Gap: {k}d)':^78}")
-    print("═" * 78)
+    if verbose:
+        print("\n" + "═" * 78)
+        print(f"{'INICIANDO PURGED WALK-FORWARD CROSS-VALIDATION':^78}")
+        print(f"{f'({window_header} │ {n_splits} Pliegues │ Val: {val_size}d │ Test: {test_size}d │ Gap: {k}d)':^78}")
+        print("═" * 78)
 
     val_auc_folds = []
 
@@ -184,7 +185,8 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
             else:
                 patience_counter += 1
                 if patience_counter >= patience:
-                    print(f"Early stopping en época {epoch+1}")
+                    if verbose:
+                        print(f"Early stopping en época {epoch+1}")
                     break
             
         val_auc_folds.append(best_val_auc)
@@ -221,11 +223,10 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
     mean_val_auc = np.mean(val_auc_folds)
     df_wf_test = df.loc[all_test_indices].copy()
     wf_probs = np.array(all_test_probs, dtype=np.float64)
-    wf_reals = np.array(all_test_reals, dtype=np.int32)
-
-    print("")
+    wf_reals = np.array(all_test_reals, dtype=np.int32)    
 
     if verbose:
+        print("")
         print(f"Validation ROC-AUC medio: {mean_val_auc:.4f}")
 
     return df_wf_test, wf_probs, wf_reals, fold_metrics, trainable_params, mean_val_auc
@@ -320,6 +321,7 @@ def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm',
         'mean_fold_auc': mean_fold_auc,
         'global_accuracy': global_acc,
         'global_balanced_accuracy': global_balanced_acc,
+        'f1_macro': r_macro['f1-score'],
         'fold_metrics': fold_metrics,
         'classification_report': report
     }
