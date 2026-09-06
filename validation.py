@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler
 from models import get_model, count_parameters
-from config import DEVICE, FIGURES_DIR, METRICS_DIR, MODELS_DIR
+from config import SEED, DEVICE, FIGURES_DIR, METRICS_DIR, MODELS_DIR
 import matplotlib.pyplot as plt
 from sklearn.metrics import (
     accuracy_score, balanced_accuracy_score, roc_auc_score, 
@@ -28,7 +28,7 @@ def create_sequences(X_data, y_data, seq_length=20):
 # ==============================================================================
 # MOTOR DE VALIDACIÓN PURGED WALK-FORWARD
 # ==============================================================================
-def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', k=5, seq_length=20, n_splits=4, train_size = 2016, test_size=504, val_size=126, window_type='expanding'):
+def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=None, k=5, seq_length=20, n_splits=4, train_size=2016, test_size=504, val_size=126, window_type='expanding', seed=SEED, verbose=False):
     """
     Ejecuta Purged Walk-Forward CV con Rolling o Expanding Window
     
@@ -39,6 +39,10 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', k=5, seq_leng
     val_size   : Sesiones para Early Stopping (ej. 126 = ~6 meses)
     k          : Purging gap para evitar data leakage
     """
+    if model_config is None:
+        model_config = {}
+        
+
     if window_type not in ['expanding', 'rolling']:
         raise ValueError(
             "window_type debe ser 'expanding' o 'rolling'"
@@ -85,7 +89,8 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', k=5, seq_leng
         val_dates = f"{df.index[val_start].strftime('%Y-%m')} a {df.index[val_end].strftime('%Y-%m')}"
         test_dates = f"{df.index[test_start].strftime('%Y-%m')} a {df.index[test_end-1].strftime('%Y-%m')}"
         
-        print(f"\n▶ [Pliegue {fold + 1}/{n_splits}] Train: {train_dates} ({train_end - train_start}d) │ Val: {val_dates} ({val_size}d) │ Test: {test_dates} ({test_size}d)")
+        if verbose:
+            print(f"\n▶ [Pliegue {fold + 1}/{n_splits}] Train: {train_dates} ({train_end - train_start}d) │ Val: {val_dates} ({val_size}d) │ Test: {test_dates} ({test_size}d)")
 
         # Escalado ajustado EXCLUSIVAMENTE con el Train de este pliegue
         scaler = StandardScaler()
@@ -119,10 +124,13 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', k=5, seq_leng
         X_test_t = torch.tensor(X_test_seq, dtype=torch.float32)
         y_test_t = torch.tensor(y_test_seq, dtype=torch.float32).unsqueeze(1)
 
-        train_loader = DataLoader(TensorDataset(X_train_t, y_train_t), batch_size=32, shuffle=True)
+        g = torch.Generator()
+        g.manual_seed(seed + fold)  # Semilla consistente por pliegue
+
+        train_loader = DataLoader(TensorDataset(X_train_t, y_train_t), batch_size=32, shuffle=True, generator=g)
 
         # Modelo y Optimización del Pliegue
-        model = get_model(model_name, input_dim=len(feature_cols)).to(DEVICE)
+        model = get_model(model_name, input_dim=len(feature_cols), **model_config).to(DEVICE)
         trainable_params = count_parameters(model)
 
         # Cálculo del balance en Train para calcular la pérdida ponderada
@@ -165,8 +173,9 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', k=5, seq_leng
                 val_auc = roc_auc_score(y_val_np, val_probs)
             scheduler.step(val_auc)
 
-            if (epoch + 1) % 2 == 0 or epoch == 0:
-                print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f} | Val AUC: {val_auc:.4f}")
+            if verbose:
+                if (epoch + 1) % 2 == 0 or epoch == 0:
+                    print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f} | Val AUC: {val_auc:.4f}")
 
             if val_auc > best_val_auc:
                 best_val_auc = val_auc
@@ -201,7 +210,8 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', k=5, seq_leng
         roc_auc = roc_auc_score(y_test_real, test_probs)
         
         fold_metrics.append({'fold': fold + 1, 'auc': roc_auc, 'acc': acc, 'samples': len(y_test_real)})
-        print(f"  └─> Test Ciego Pliegue {fold + 1}: ROC-AUC = {roc_auc:.4f} │ Accuracy = {acc*100:.2f}%")
+        if verbose:
+            print(f"  └─> Test Ciego Pliegue {fold + 1}: ROC-AUC = {roc_auc:.4f} │ Accuracy = {acc*100:.2f}%")
 
         all_test_indices.extend(list(df.index[test_start:test_end]))
         all_test_probs.extend(test_probs)
@@ -214,9 +224,11 @@ def run_purged_walk_forward(df, feature_cols, model_name = 'lstm', k=5, seq_leng
     wf_reals = np.array(all_test_reals, dtype=np.int32)
 
     print("")
-    print(f"Validation ROC-AUC medio: {mean_val_auc:.4f}")
 
-    return df_wf_test, wf_probs, wf_reals, fold_metrics, trainable_params
+    if verbose:
+        print(f"Validation ROC-AUC medio: {mean_val_auc:.4f}")
+
+    return df_wf_test, wf_probs, wf_reals, fold_metrics, trainable_params, mean_val_auc
 
 
 def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm', trainable_params=0, plot_curves=True, save_results=True):

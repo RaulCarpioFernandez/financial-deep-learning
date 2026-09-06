@@ -7,10 +7,10 @@ from torch.nn.utils.parametrizations import weight_norm
 
 # Arquitectura de la red LSTM
 class LSTM_Classifier(nn.Module):
-    def __init__(self, input_dim, hidden_dim=32, dense_dim=16, output_dim=1, dropout_prob=0.3):
+    def __init__(self, input_dim, hidden_dim=32, dense_dim=16, output_dim=1, dropout=0.3):
         super(LSTM_Classifier, self).__init__()
         self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=1, batch_first=True, bidirectional=False)
-        self.dropout = nn.Dropout(dropout_prob)
+        self.dropout = nn.Dropout(dropout)
         self.fc1 = nn.Linear(hidden_dim, dense_dim)
         self.act = nn.LeakyReLU(negative_slope=0.01)
         self.fc2 = nn.Linear(dense_dim, output_dim)
@@ -26,10 +26,10 @@ class LSTM_Classifier(nn.Module):
 
 # Arquitectura de la red GRU
 class GRU_Classifier(nn.Module):
-    def __init__(self, input_dim, hidden_dim=16, dense_dim=8, output_dim=1, dropout_prob=0.3):
+    def __init__(self, input_dim, hidden_dim=16, dense_dim=8, output_dim=1, dropout=0.3):
         super(GRU_Classifier, self).__init__()
         self.gru = nn.GRU(input_size=input_dim, hidden_size=hidden_dim, num_layers=1, batch_first=True, bidirectional=False)
-        self.dropout = nn.Dropout(dropout_prob)
+        self.dropout = nn.Dropout(dropout)
         self.fc1 = nn.Linear(hidden_dim, dense_dim)
         self.act = nn.LeakyReLU(negative_slope=0.01)
         self.fc2 = nn.Linear(dense_dim, output_dim)
@@ -97,7 +97,7 @@ class TemporalBlock(nn.Module):
 
 
 class TCN_Classifier(nn.Module):
-    def __init__(self, input_dim, num_channels=(16, 16), kernel_size=3, dense_dim=8, output_dim=1, dropout=0.3):
+    def __init__(self, input_dim, num_channels=(32, 32, 32), kernel_size=3, dense_dim=16, output_dim=1, dropout=0.2):
         super(TCN_Classifier, self).__init__() 
         layers = []
 
@@ -129,14 +129,17 @@ class TCN_Classifier(nn.Module):
         
 
 # Factory function para instanciar por nombre
-def get_model(model_name, input_dim):
+def get_model(model_name, input_dim, **kwargs):
     name = model_name.lower()
     if name == 'lstm':
-        return LSTM_Classifier(input_dim=input_dim)
+        return LSTM_Classifier(input_dim=input_dim, **kwargs)
     elif name == 'gru':
-        return GRU_Classifier(input_dim=input_dim)
+        dropout = kwargs.get('dropout', 0.3)
+        hidden_dim = kwargs.get('hidden_dim', 32)
+        dense_dim = kwargs.get('dense_dim', 16)
+        return GRU_Classifier(input_dim=input_dim, **kwargs)
     elif name == 'tcn':
-        return TCN_Classifier(input_dim=input_dim)
+        return TCN_Classifier(input_dim=input_dim, **kwargs)
     elif name == 'transformer':
         # Aquí conectaremos Transformer_Classifier
         raise NotImplementedError("Transformer en desarrollo")
