@@ -36,7 +36,7 @@ def run_multiseed_grid_search(model_name='lstm', configs=None, seeds=EVAL_SEEDS)
             'lstm': LSTM_CONFIGS,
             'gru': GRU_CONFIGS,
             'tcn': TCN_CONFIGS,
-            # 'transformer': TRANSFORMER_CONFIGS,  # Listo para añadir más adelante
+            'encoder': ENCODER_CONFIGS,  # Listo para añadir más adelante
         }
         name = model_name.lower()
         if name not in config_mapping:
@@ -196,7 +196,7 @@ def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEE
                 'lstm': BEST_LSTM_CONFIG,
                 'gru': BEST_GRU_CONFIG,
                 'tcn': BEST_TCN_CONFIG,
-                # 'transformer': TRANSFORMER_CONFIGS,  # Listo para añadir más adelante
+                'encoder': ENCODER_CONFIGS,  # Listo para añadir más adelante
             }
             name = model_name.lower()
             if name not in config_mapping:
@@ -436,12 +436,12 @@ def main(model_name='tcn', config=None, seed=SEED):
 
 if __name__ == '__main__':
     # PASO 1: Búsqueda de hiperparámetros (se ejecuta una vez para encontrar la mejor config)
-    #run_multiseed_grid_search(model_name='gru', configs=GRU_CONFIGS, seeds=EVAL_SEEDS)
+    run_multiseed_grid_search(model_name='encoder', configs=ENCODER_CONFIGS, seeds=EVAL_SEEDS)
 
     # PASO 2: Evaluación multiseed rigurosa de la mejor configuración (genera tablas mu ± sigma y gráficos)
-    evaluate_multiseed_experiment(model_name='lstm', config=BEST_LSTM_CONFIG, seeds=EVAL_SEEDS)
-    evaluate_multiseed_experiment(model_name='gru', config=BEST_GRU_CONFIG, seeds=EVAL_SEEDS)
-    evaluate_multiseed_experiment(model_name='tcn', config=BEST_TCN_CONFIG, seeds=EVAL_SEEDS)
+    #evaluate_multiseed_experiment(model_name='lstm', config=BEST_LSTM_CONFIG, seeds=EVAL_SEEDS)
+    #evaluate_multiseed_experiment(model_name='gru', config=BEST_GRU_CONFIG, seeds=EVAL_SEEDS)
+    #evaluate_multiseed_experiment(model_name='tcn', config=BEST_TCN_CONFIG, seeds=EVAL_SEEDS)
 
     # PASO 3 (Opcional): Prueba unitaria rápida
-    # main(model_name='tcn', config=BEST_TCN_CONFIG, seed=SEED)
+    # main(model_name='encoder', config=BEST_ENCODER_CONFIG, seed=SEED)

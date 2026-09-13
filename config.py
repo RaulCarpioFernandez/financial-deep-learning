@@ -10,12 +10,16 @@ TICKER = "^GSPC"  # S&P 500
 BEST_TCN_CONFIG = {'num_channels': (32, 32, 16, 16), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2}
 BEST_LSTM_CONFIG = {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2}
 BEST_GRU_CONFIG = {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2}
+BEST_ENCODER_CONFIG = {'d_model': 32, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 32, 'dense_dim': 16,  'dropout': 0.2}
 
+# Hiperparámetros de entrenamiento
+BATCH_SIZE = 32
+EPOCHS = 40
 
 # Hiperparámetros Temporales y Target
 K = 5
 BASELINE_WINDOW = 60
-SEQUENCE_LENGTH = 20
+SEQUENCE_LENGTH = 60
 START_DATE = '2000-01-01'
 END_DATE = '2026-05-01'
 
@@ -38,39 +42,18 @@ MODELS_DIR = f'{RESULTS_DIR}/models'
 DATA_DIR = 'data'
 
 # Configuraciones para el grid-search
-TCN_CONFIGS = [
-    # 1. Compactas / Regularizadas (Poco riesgo de sobreajuste)
-    {'num_channels': (16, 16, 16), 'kernel_size': 3, 'dense_dim': 8, 'dropout': 0.2},
-    {'num_channels': (32, 16, 8),   'kernel_size': 3, 'dense_dim': 8, 'dropout': 0.2},  # Pirámide descendente
-
-    # 2. Capacidad Media (Equilibrio)
-    {'num_channels': (32, 32, 32), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2},
-    {'num_channels': (32, 32, 32), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.3},
-    {'num_channels': (64, 32, 16), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2},  # Pirámide descendente amplia
-    {'num_channels': (32, 32, 32), 'kernel_size': 5, 'dense_dim': 16, 'dropout': 0.3},  # Mayor contexto local
-
-    # 3. Alta Capacidad (Para capturar interacciones complejas)
-    {'num_channels': (64, 64, 64), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2},
-    {'num_channels': (64, 64, 64), 'kernel_size': 3, 'dense_dim': 32, 'dropout': 0.2},
-    {'num_channels': (64, 64, 64), 'kernel_size': 3, 'dense_dim': 32, 'dropout': 0.3},
-    {'num_channels': (64, 64, 64), 'kernel_size': 5, 'dense_dim': 32, 'dropout': 0.2},
-
-    # 4. Configuración Profunda (4 bloques d=[1,2,4,8] para memoria larga)
-    {'num_channels': (32, 32, 16, 16), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2}
-]
-
 LSTM_CONFIGS = [
-    # 1. Una capa - Compactas / Regularizadas (Control de sobreajuste)
+    # Una capa - Compactas / Regularizadas (Control de sobreajuste)
     {'num_layers': 1, 'hidden_dim': 16, 'dense_dim': 8,  'dropout': 0.2},
     {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 8,  'dropout': 0.2},
     
-    # 2. Una capa - Capacidad media y alta
+    # Una capa - Capacidad media y alta
     {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.2},
     {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.3},
     {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.2},
     {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3},
 
-    # 3. Dos capas apiladas (Stacked LSTM - Abstracción temporal profunda)
+    # Dos capas apiladas (Stacked LSTM - Abstracción temporal profunda)
     {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2},
     {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 8, 'dropout': 0.2},
     {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.2},
@@ -78,29 +61,68 @@ LSTM_CONFIGS = [
     {'num_layers': 2, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.3}
 ]
 
-
 GRU_CONFIGS = [
-    # 1. Una capa - Compactas / Regularizadas (1.9k - 5.6k pesos)
+    # Una capa - Compactas / Regularizadas (1.9k - 5.6k pesos)
     {'num_layers': 1, 'hidden_dim': 16, 'dense_dim': 8,  'dropout': 0.2},
     {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 8,  'dropout': 0.2},
     
-    # 2. Una capa - Capacidad media y alta (5.6k - 18.4k pesos)
+    # Una capa - Capacidad media y alta (5.6k - 18.4k pesos)
     {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.2},
     {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.3},
     {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.2},  # ~17.4k pesos
     {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3},  # ~18.4k pesos
 
-    # 3. Dos capas apiladas - Simétricas con LSTM (3.5k - 12k pesos)
+    # Dos capas apiladas - Simétricas con LSTM (3.5k - 12k pesos)
     {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8,  'dropout': 0.2},
     {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 8,  'dropout': 0.2},  # ~11.7k pesos
     {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.2},  # ~12.0k pesos
     {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.3},
     
-    # 4. Dos capas - Paridad paramétrica exacta con LSTM (~15k-18k) y alta capacidad
+    # Dos capas - Paridad paramétrica exacta con LSTM (~15k-18k) y alta capacidad
     {'num_layers': 2, 'hidden_dim': 40, 'dense_dim': 8,  'dropout': 0.2},  # ~17.5k pesos (Paridad exacta TCN/LSTM)
     {'num_layers': 2, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.3}   # ~42.3k pesos (Techo de capacidad)
 ]
 
+TCN_CONFIGS = [
+    # Compactas / Regularizadas (Poco riesgo de sobreajuste)
+    {'num_channels': (16, 16, 16), 'kernel_size': 3, 'dense_dim': 8, 'dropout': 0.2},
+    {'num_channels': (32, 16, 8),   'kernel_size': 3, 'dense_dim': 8, 'dropout': 0.2},  # Pirámide descendente
+
+    # Capacidad Media (Equilibrio)
+    {'num_channels': (32, 32, 32), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2},
+    {'num_channels': (32, 32, 32), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.3},
+    {'num_channels': (64, 32, 16), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2},  # Pirámide descendente amplia
+    {'num_channels': (32, 32, 32), 'kernel_size': 5, 'dense_dim': 16, 'dropout': 0.3},  # Mayor contexto local
+
+    # Alta Capacidad (Para capturar interacciones complejas)
+    {'num_channels': (64, 64, 64), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2},
+    {'num_channels': (64, 64, 64), 'kernel_size': 3, 'dense_dim': 32, 'dropout': 0.2},
+    {'num_channels': (64, 64, 64), 'kernel_size': 3, 'dense_dim': 32, 'dropout': 0.3},
+    {'num_channels': (64, 64, 64), 'kernel_size': 5, 'dense_dim': 32, 'dropout': 0.2},
+
+    # Configuración Profunda (4 bloques d=[1,2,4,8] para memoria larga)
+    {'num_channels': (32, 32, 16, 16), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2}
+]
+
+ENCODER_CONFIGS = [
+    # Una capa encoder - Muy compactas (~4k - 8k pesos)
+    {'d_model': 16, 'nhead': 1, 'num_layers': 1, 'dim_feedforward': 32, 'dense_dim': 8, 'dropout': 0.2},
+    {'d_model': 16, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 32, 'dense_dim': 8, 'dropout': 0.2},
+    
+    # Una capa encoder - Capacidad media
+    {'d_model': 32, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 32, 'dense_dim': 8, 'dropout': 0.2},
+    {'d_model': 32, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.2},
+    {'d_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.3},
+    {'d_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 128, 'dense_dim': 16, 'dropout': 0.2},
+
+    # Mayor representación
+    {'d_model': 48, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.2},
+    
+    # Dos capas encoder apiladas (~15k - 25k pesos)
+    {'d_model': 32, 'nhead': 2, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 8, 'dropout': 0.2},
+    {'d_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.2},
+    {'d_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.3}
+]
 
 def get_config_dict():
     """Devuelve un diccionario serializable con todos los hiperparámetros."""

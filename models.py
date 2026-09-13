@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 from torch.nn.utils.parametrizations import weight_norm
@@ -5,7 +6,7 @@ from torch.nn.utils.parametrizations import weight_norm
 # DEFINICIÓN DE LAS ARQUITECTURAS DE LAS REDES NEURONALES
 # ==============================================================================
 
-# Arquitectura de la red LSTM
+# ARQUITECTURA DE LA RED LSTM
 class LSTM_Classifier(nn.Module):
     def __init__(self, input_dim, hidden_dim=32, dense_dim=16, output_dim=1, num_layers=1, dropout=0.3):
         super(LSTM_Classifier, self).__init__()
@@ -26,7 +27,7 @@ class LSTM_Classifier(nn.Module):
         return logits
 
 
-# Arquitectura de la red GRU
+# ARQUITECTURA DE LA RED GRU
 class GRU_Classifier(nn.Module):
     def __init__(self, input_dim, hidden_dim=32, dense_dim=16, output_dim=1, num_layers=1, dropout=0.3):
         super(GRU_Classifier, self).__init__()
@@ -49,6 +50,7 @@ class GRU_Classifier(nn.Module):
 
     
 
+# ARQUITECTURA DE LA RED TCN
 class Chomp1d(nn.Module):
     """Elimina el padding derecho para mantener causalidad y evitar look ahead bias"""
     def __init__(self, chomp_size):
@@ -130,7 +132,85 @@ class TCN_Classifier(nn.Module):
 
         return logits
 
+
+
+
+# ARQUITECTURA DE LA RED ENCODER TRANSFORMER
+
+# Definición del Positional Encoding
+class PositionalEncoding(nn.Module):
+    """Codificación posicional sinusoidal canónica de Vaswani et al. (2017)."""
+    def __init__(self, d_model: int, max_len: int = 500, dropout: float = 0.1):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
         
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        
+        pe = pe.unsqueeze(0)  # Dimensiones: (1, max_len, d_model)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x tiene dimensiones: (batch_size, seq_len, d_model)
+        x = x + self.pe[:, :x.size(1), :]
+        return self.dropout(x)
+
+
+class EncoderTransformer_Classifier(nn.Module):
+    """
+    Encoder Transformer compacto para series temporales financieras.
+    Diseñado para mantener paridad paramétrica (~15k-20k pesos) con LSTM y TCN.
+    """
+    def __init__(self, input_dim: int, d_model: int = 32, nhead: int = 2, 
+                 num_layers: int = 1, dim_feedforward: int = 32, 
+                 dense_dim: int = 16, output_dim: int = 1, dropout: float = 0.2):
+        super(EncoderTransformer_Classifier, self).__init__()
+        
+        # Proyección lineal de entrada: (B, L, input_dim) -> (B, L, d_model)
+        self.input_projection = nn.Linear(input_dim, d_model)
+        self.pos_encoder = PositionalEncoding(d_model=d_model, max_len=120, dropout=dropout)
+        
+        # Capas Encoder del Transformer
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            activation='gelu',
+            batch_first=True  # Formato: (batch_size, seq_len, d_model)
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        
+        # 3. Cabezal de Clasificación (Head)
+        self.fc1 = nn.Linear(d_model, dense_dim)
+        self.act = nn.GELU()
+        self.dropout = nn.Dropout(dropout)
+        self.fc2 = nn.Linear(dense_dim, output_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x shape: (batch_size, seq_len, input_dim)
+        out = self.input_projection(x)
+        out = self.pos_encoder(out)
+        
+        # Modelado de dependencias temporales mediante self-attention
+        out = self.transformer_encoder(out)
+        
+        # Para forecasting, tomamos el último estado temporal t (último paso de la ventana causal)
+        last_step = out[:, -1, :]
+        
+        # Proyección final a logits
+        dense = self.act(self.fc1(last_step))
+        dense = self.dropout(dense)
+        logits = self.fc2(dense)
+        
+        return logits
+
+    
+
 
 # Factory function para instanciar por nombre
 def get_model(model_name, input_dim, **kwargs):
@@ -138,15 +218,11 @@ def get_model(model_name, input_dim, **kwargs):
     if name == 'lstm':
         return LSTM_Classifier(input_dim=input_dim, **kwargs)
     elif name == 'gru':
-        dropout = kwargs.get('dropout', 0.3)
-        hidden_dim = kwargs.get('hidden_dim', 32)
-        dense_dim = kwargs.get('dense_dim', 16)
         return GRU_Classifier(input_dim=input_dim, **kwargs)
     elif name == 'tcn':
         return TCN_Classifier(input_dim=input_dim, **kwargs)
-    elif name == 'transformer':
-        # Aquí conectaremos Transformer_Classifier
-        raise NotImplementedError("Transformer en desarrollo")
+    elif name == 'encoder':
+        return EncoderTransformer_Classifier(input_dim=input_dim, **kwargs)
     else:
         raise ValueError(f"Modelo desconocido: {model_name}")
 

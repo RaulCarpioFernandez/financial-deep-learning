@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler
 from models import get_model, count_parameters
-from config import SEED, DEVICE, FIGURES_DIR, METRICS_DIR, MODELS_DIR
+from config import SEED, DEVICE, EPOCHS, BATCH_SIZE, FIGURES_DIR, METRICS_DIR, MODELS_DIR
 import matplotlib.pyplot as plt
 from sklearn.metrics import (
     accuracy_score, balanced_accuracy_score, roc_auc_score, 
@@ -128,7 +128,7 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
         g = torch.Generator()
         g.manual_seed(seed + fold)  # Semilla consistente por pliegue
 
-        train_loader = DataLoader(TensorDataset(X_train_t, y_train_t), batch_size=32, shuffle=True, generator=g)
+        train_loader = DataLoader(TensorDataset(X_train_t, y_train_t), batch_size=BATCH_SIZE, shuffle=True, generator=g)
 
         # Modelo y Optimización del Pliegue
         model = get_model(model_name, input_dim=len(feature_cols), **model_config).to(DEVICE)
@@ -145,7 +145,6 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
 
         # Entrenamiento con Early Stopping por ROC-AUC
-        EPOCHS = 40
         patience = 6
         patience_counter = 0
         #best_val_loss = float('inf')
