@@ -1,0 +1,66 @@
+{
+    "model": "ARIMA",
+    "target": "future_return",
+    "ml_performance": {
+        "model": "ARIMA",
+        "trainable_params": 0,
+        "rmse": 0.025095823754501322,
+        "mae": 0.01763254779141781,
+        "r2_score": -0.00552036941910905,
+        "pearson_corr": 0.014242849188753511,
+        "spearman_ic": 0.025932067676434106,
+        "directional_hit_rate": 0.5595238095238095,
+        "mean_fold_rmse": 0.024818726194905306,
+        "mean_fold_r2": -0.010488427771243564,
+        "fold_metrics": [
+            {
+                "fold": 1,
+                "rmse": 0.03088026371579736,
+                "r2": -0.009985807235582289,
+                "samples": 504
+            },
+            {
+                "fold": 2,
+                "rmse": 0.022203559296751156,
+                "r2": -0.021309603730618187,
+                "samples": 504
+            },
+            {
+                "fold": 3,
+                "rmse": 0.024799173716666432,
+                "r2": 0.0015047884525906108,
+                "samples": 504
+            },
+            {
+                "fold": 4,
+                "rmse": 0.02139190805040627,
+                "r2": -0.012163088571364389,
+                "samples": 504
+            }
+        ]
+    },
+    "financial_performance": {
+        "Model": "ARIMA",
+        "Target": "future_return",
+        "CAGR_Strategy": 0.052667270476201455,
+        "CAGR_ConstLong": 0.08988241339576808,
+        "CAGR_BnH": 0.12829213626587976,
+        "Ann_Return_Strategy": 0.05773711012399275,
+        "Ann_Vol_Strategy": 0.11294466456251448,
+        "Sharpe_Strategy": 0.511198203442689,
+        "Sharpe_ConstLong": 0.7190998613667733,
+        "Sharpe_BnH": 0.7190998631193205,
+        "MDD_Strategy": 0.23340329034889395,
+        "MDD_ConstLong": 0.23979637050974226,
+        "MDD_BnH": 0.33924960002653287,
+        "Skewness_Strategy": -0.9765346314758864,
+        "Kurtosis_Strategy": 6.91901633055671,
+        "Delta_Util_Strategy": -0.7044091502218366,
+        "Delta_Util_ConstLong": 1.615121245431421,
+        "BSS": NaN,
+        "R2_OOS": -0.03718200004944894,
+        "Gross_Exposure": 0.678760387456587,
+        "Ann_Turnover": 43.28988112147137,
+        "Total_Costs_Pct": 17.307363186461274
+    }
+}
