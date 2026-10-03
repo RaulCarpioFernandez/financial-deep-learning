@@ -5,18 +5,18 @@ import pandas as pd
 import scipy.stats as stats
 import matplotlib.pyplot as plt
 from sklearn.metrics import brier_score_loss
-from config import FIGURES_DIR, METRICS_DIR
+from config import TARGET_TYPE, FIGURES_DIR, METRICS_DIR
 
 
 # ==============================================================================
 # FUNCIÓN DE EVALUACIÓN ECONÓMICA Y BACKTESTING HÍBRIDO
 # ==============================================================================
-def run_economic_backtest(df_total, df_test, test_probs, cost_bps=5, risk_aversion=6.0, 
+def run_economic_backtest(df_total, df_test, test_preds, cost_bps=5, risk_aversion=6.0, 
                           model_name='lstm', plot_curves=True, save_results=True):
     """
     df_total: DataFrame completo (para calcular la SMA 200 histórica continua)
     df_test: DataFrame de test alineado
-    test_probs: Vector 1D con las probabilidades predichas
+    test_preds: Vector 1D con las probabilidades (clasificación) o estimaciones continuas (regresión)
     cost_bps: Coste por rotación (5 bps = 0.0005)
     risk_aversion: Parámetro gamma de aversión al riesgo
     """
@@ -33,24 +33,46 @@ def run_economic_backtest(df_total, df_test, test_probs, cost_bps=5, risk_aversi
     
     bt['Price'] = price_test
     bt['Market_Return'] = bt['Price'].pct_change().shift(-1)
-    bt['Prob'] = np.array(test_probs).ravel()
+    bt['Pred_Signal'] = np.array(test_preds).ravel()
     
     # Filtro Macro: SMA 200
     sma_200 = price_total.rolling(200).mean().reindex(df_test.index).squeeze()
     # El mercado es alcista si el precio supera la SMA 200
     bull_market = (bt['Price'].values > sma_200.values)
 
-    # Convicción Centrada en la Mediana Histórica de Predicciones
-    conviction = 4.0 * (bt['Prob'].values - 0.5)
+    # Modulación de Posición según el Tipo de Target
+    if TARGET_TYPE == 'excess_direction':
+        # Convicción Centrada en la Mediana Histórica de Predicciones
+        conviction = 4.0 * (bt['Pred_Signal'].values - 0.50)
+        # Asignación Asimétrica con Suelo Defensivo al 20%:
+        # - En Bull Market: Base 90%, modulable entre 50% y 100%
+        # - En Bear Market: Defensivo (entre -100% en corto y +60% en rebotes de alta convicción)        
+        pos_bull = np.clip(0.90 + conviction, 0.50, 1.00)
+        pos_bear = np.where(bt['Pred_Signal'].values < 0.50, 0.00, np.clip(conviction, 0.00, 0.50))
 
-    # Asignación Asimétrica con Suelo Defensivo al 20%:
-    # - En Bull Market: Base 90%, modulable entre 50% y 100%
-    # - En Bear Market: Defensivo (entre -100% en corto y +60% en rebotes de alta convicción)
-    pos_bull = np.clip(0.90 + conviction, 0.50, 1.00)
-    #pos_bear = np.where(bt['Prob'].values < 0.5, -0.50, np.clip(conviction, -0.50, 0.50))
-    pos_bear = np.where(bt['Prob'].values < 0.5, 0.00, np.clip(conviction, 0.00, 0.50))
-    
+    elif TARGET_TYPE == 'future_return':
+        # Regresión de retorno continuo (señal esperada r_hat)
+        s_preds = pd.Series(bt['Pred_Signal'].values, index=bt.index)
+        rolling_med = s_preds.rolling(60, min_periods=10).median().bfill()
+        rolling_std = s_preds.rolling(60, min_periods=10).std().replace(0, np.nan).bfill().fillna(1.0)
+        z_score_signal = np.clip((s_preds - rolling_med) / rolling_std, -1.0, 1.0).values
+
+        pos_bull = np.clip(0.85 + 0.30 * z_score_signal, 0.50, 1.00)
+        pos_bear = np.where(z_score_signal < 0, 0.00, np.clip(0.40 * z_score_signal, 0.00, 0.50))
+        
+    elif TARGET_TYPE == 'volatility':
+        # Regresión de volatilidad continua (Volatility Targeting: Target Vol = 15%)
+        target_vol = 0.15
+        pred_vol_safe = np.clip(bt['Pred_Signal'].values, 0.05, 0.60)
+        vol_scalar = np.clip(target_vol / pred_vol_safe, 0.20, 1.00)
+
+        pos_bull = vol_scalar
+        pos_bear = np.where(bull_market, vol_scalar, 0.50 * vol_scalar)
+    else:
+        raise ValueError(f"TARGET_TYPE no válido: {TARGET_TYPE}")
+
     bt['Position_Strategy'] = np.where(bull_market, pos_bull, pos_bear)
+
 
     # --- BENCHMARK ALWAYS LONG AJUSTADO A MISMA EXPOSICIÓN ---
     gross_exposure = np.mean(abs(bt['Position_Strategy']))
@@ -63,13 +85,13 @@ def run_economic_backtest(df_total, df_test, test_probs, cost_bps=5, risk_aversi
 
     # Coste Always Long (únicamente coste de entrada inicial en t=0)
     bt['Costs_ConstLong'] = 0.0
-    bt.loc[bt.index[0], 'Costs_ConstLong'] = np.mean(abs(bt['Position_Strategy'])) * c
+    bt.loc[bt.index[0], 'Costs_ConstLong'] = gross_exposure * c
 
     # Coste de Buy & Hold
     bt['Costs_BnH'] = 0.0
     bt.loc[bt.index[0], 'Costs_BnH'] = 1.0 * c
     
-    # Retornos y Curva
+    # Retornos y Curva de Evolución Patrimonial
     bt['Net_Return_Strategy'] = bt['Position_Strategy'] * bt['Market_Return'] - bt['Costs_Strategy']
     bt['Net_Return_ConstLong'] = bt['Position_ConstLong'] * bt['Market_Return'] - bt['Costs_ConstLong']
     bt['Net_Return_BnH'] = 1.0 * bt['Market_Return'] - bt['Costs_BnH']
@@ -112,21 +134,31 @@ def run_economic_backtest(df_total, df_test, test_probs, cost_bps=5, risk_aversi
     cagr_lon, ann_ret_lon, ann_vol_lon, sharpe_lon, mdd_lon, skew_lon, kurt_lon, delta_util_lon = get_metrics(bt['Net_Return_ConstLong'], bt['Cum_ConstLong'])
     cagr_bnh, ann_ret_bnh, ann_vol_bnh, sharpe_bnh, mdd_bnh, skew_bnh, kurt_bnh, _ = get_metrics(bt['Net_Return_BnH'], bt['Cum_BnH'])
 
-    # Cálculo de Campbell & Thompson R^2_OOS
+    # Cálculo de Campbell & Thompson R^2_OOS adaptado al target
     # Retorno bruto de mercado sin costes de transacción
     r_mkt_raw = bt['Market_Return'].values
-
-    # Convicción centrada en la mediana móvil multiplicada por la volatilidad realizada
-    prob_center = bt['Prob'].rolling(60, min_periods=15).median().fillna(0.50).values
-    vol_rolling = bt['Market_Return'].rolling(20, min_periods=5).std().bfill().values
-    implied_expected_ret = (bt['Prob'].values - prob_center) * vol_rolling
     # Media histórica prevalente (Expanding Window)
     prevailing_mean = bt['Market_Return'].expanding(min_periods=20).mean().bfill().values
-    # Filtrar máscaras válidas
-    valid_mask = ~(np.isnan(implied_expected_ret) | np.isnan(prevailing_mean) | np.isnan(r_mkt_raw))
-    ss_model = np.sum((r_mkt_raw[valid_mask] - implied_expected_ret[valid_mask]) ** 2)
-    ss_bench = np.sum((r_mkt_raw[valid_mask] - prevailing_mean[valid_mask]) ** 2)
-    r2_oos = 1.0 - (ss_model / ss_bench)
+
+    if TARGET_TYPE == 'excess_direction':
+        # Convicción centrada en la mediana móvil multiplicada por la volatilidad realizada
+        prob_center = bt['Pred_Signal'].rolling(60, min_periods=15).median().fillna(0.50).values
+        vol_rolling = bt['Market_Return'].rolling(20, min_periods=5).std().bfill().values
+        implied_expected_ret = (bt['Pred_Signal'].values - prob_center) * vol_rolling
+    elif TARGET_TYPE == 'future_return':
+        # Regresión continua: la predicción del modelo ya es la expectativa directa del retorno
+        implied_expected_ret = bt['Pred_Signal'].values
+    else:
+        implied_expected_ret = None
+
+     # Filtrar máscaras válidas
+    if implied_expected_ret is not None:
+        valid_mask = ~(np.isnan(implied_expected_ret) | np.isnan(prevailing_mean) | np.isnan(r_mkt_raw))
+        ss_model = np.sum((r_mkt_raw[valid_mask] - implied_expected_ret[valid_mask]) ** 2)
+        ss_bench = np.sum((r_mkt_raw[valid_mask] - prevailing_mean[valid_mask]) ** 2)
+        r2_oos = float(1.0 - (ss_model / ss_bench))
+    else:
+        r2_oos = float('nan')
 
     # Exposición media
     num_long_days = np.sum(bt['Position_Strategy'] > 0.05)
@@ -134,20 +166,25 @@ def run_economic_backtest(df_total, df_test, test_probs, cost_bps=5, risk_aversi
     num_neutral_days = np.sum(np.abs(bt['Position_Strategy']) <= 0.05)
 
     # Diagnóstico Operativo
-    total_costs_pct = np.sum(bt['Costs_Strategy']) * 100
-    ann_turnover = np.mean(bt['Turnover_Strategy']) * 252
+    total_costs_pct = float(np.sum(bt['Costs_Strategy']) * 100)
+    ann_turnover = float(np.mean(bt['Turnover_Strategy']) * 252)
 
-    # Cálculo del Brier Skill Score (BSS)
-    y_test_real = df_test.loc[bt.index, 'Target'].values
-    probs_eval = bt['Prob'].values
-    brier_model = brier_score_loss(y_test_real, probs_eval)
-    base_rate = np.mean(y_test_real)
-    brier_base = np.mean((base_rate - y_test_real) ** 2)
-    bss = 1.0 - (brier_model / (brier_base + 1e-9))
+    # Brier Skill Score (solo aplicable a clasificación)
+    if TARGET_TYPE == 'excess_direction':
+        y_test_real = df_test.loc[bt.index, 'Target'].values
+        brier_model = brier_score_loss(y_test_real, bt['Pred_Signal'].values)
+        base_rate = np.mean(y_test_real)
+        brier_base = np.mean((base_rate - y_test_real) ** 2)
+        bss = float(1.0 - (brier_model / (brier_base + 1e-9)))
+        bss_str = f"{bss:>+15.4f}"
+    else:
+        bss = float('nan')
+        bss_str = f"{'N/A (Regresión)':>16}"
 
     # Informe en Consola
     print("\n" + "═" * 86)
     print(f"{'INFORME DE RENDIMIENTO ECONÓMICO Y GESTIÓN DE RIESGO':^86}")
+    print(f"{f'TARGET: {TARGET_TYPE.upper()} │ MODELO: {model_name.upper()}':^86}")
     print("═" * 86)
     print(f" Parámetros de Simulación : Costes: {cost_bps} bps │ Aversión al Riesgo (γ): {risk_aversion:.1f}")
     print(f" Distribución de Posición : Largos: {num_long_days}d ({num_long_days/len(bt)*100:.1f}%) │ Cortos: {num_short_days}d ({num_short_days/len(bt)*100:.1f}%) │ Neutro: {num_neutral_days}d ({num_neutral_days/len(bt)*100:.1f}%)")
@@ -164,8 +201,9 @@ def run_economic_backtest(df_total, df_test, test_probs, cost_bps=5, risk_aversi
     print(f" {'Curtosis Excesiva':<28} │ {kurt_strat:>15.3f} │ {kurt_lon:>16.3f} │ {kurt_bnh:>16.3f}")
     print("─" * 86)
     print(f" {'Ganancia Utilidad (ΔU / CER)':<28} │ {delta_util_strat:>+14.2f}% │ {delta_util_lon:>+15.2f}% │ {'0.00% (Base)':>16}")
-    print(f" {'Brier Skill Score (BSS)':<28} │ {bss:>+15.4f} │ {'N/A (Estático)':>16} │ {'0.0000 (Base)':>16}")
-    print(f" {'R² Fuera de Muestra (C&T)':<28} │ {r2_oos:>15.4f} │ {'N/A (Estático)':>16} │ {'0.0000 (Base)':>16}")
+    print(f" {'Brier Skill Score (BSS)':<28} │ {bss_str} │ {'N/A (Estático)':>16} │ {'0.0000 (Base)':>16}")
+    r2_str = f"{r2_oos:>15.4f}" if not np.isnan(r2_oos) else f"{'N/A (Volatilidad)':>16}"
+    print(f" {'R² Fuera de Muestra (C&T)':<28} │ {r2_str} │ {'N/A (Estático)':>16} │ {'0.0000 (Base)':>16}")
     print("═" * 86)
     
     # Gráficas
@@ -204,6 +242,7 @@ def run_economic_backtest(df_total, df_test, test_probs, cost_bps=5, risk_aversi
     
     summary_data = {
         'Model': model_name.upper(),
+        'Target': TARGET_TYPE,
         'CAGR_Strategy': cagr_strat,
         'CAGR_ConstLong': cagr_lon,
         'CAGR_BnH': cagr_bnh,

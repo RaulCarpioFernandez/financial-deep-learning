@@ -1,16 +1,36 @@
 import torch
 
+# Selección del target: 'excess_direction', 'future_return', 'volatility'
+TARGET_TYPE = 'future_return'
+
 # Parámetros del Entorno
 EVAL_SEEDS = [0, 2, 42, 123, 1111] # Lista de semillas para evaluar robustez estadística fuera de muestra
 SEED = 42
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 TICKER = "^GSPC"  # S&P 500
 
-# Mejor configuración obtenida del Grid Search para cada modelo (intentando que todas tengan misma cantidad de parámetros)
-BEST_TCN_CONFIG = {'num_channels': (32, 32, 16, 16), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2}
-BEST_LSTM_CONFIG = {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2}
-BEST_GRU_CONFIG = {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2}
-BEST_ENCODER_CONFIG = {'d_model': 32, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 32, 'dense_dim': 16,  'dropout': 0.2}
+# Mejor configuración obtenida del Grid Search para cada modelo (dependiendo del target)
+if TARGET_TYPE == 'future_return':
+    BEST_LSTM_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3}
+    BEST_GRU_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3}
+    BEST_TCN_CONFIG = {'num_channels': (64, 64, 64), 'kernel_size': 5, 'dense_dim': 32, 'dropout': 0.2}
+    BEST_ENCODER_CONFIG = {'d_model': 32, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.2}
+    BEST_LSTMATT_CONFIG = {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16,   'dropout': 0.2}
+    BEST_PATCHTST_CONFIG = {'patch_len': 12, 'stride': 12, 'd_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.2}
+elif TARGET_TYPE == 'excess_direction':
+    BEST_LSTM_CONFIG = {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2}
+    BEST_GRU_CONFIG = {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2}
+    BEST_TCN_CONFIG = {'num_channels': (32, 32, 16, 16), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2}
+    BEST_ENCODER_CONFIG = {'d_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.3}
+    BEST_LSTMATT_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.2}
+    BEST_PATCHTST_CONFIG = {'patch_len': 8, 'stride': 4, 'd_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.3}
+elif TARGET_TYPE == 'volatility':
+    BEST_LSTM_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3}
+    BEST_GRU_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.2}
+    BEST_TCN_CONFIG = {'num_channels': (64, 64, 64), 'kernel_size': 3, 'dense_dim': 32, 'dropout': 0.3}
+    BEST_ENCODER_CONFIG = {'d_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.3}
+    BEST_LSTMATT_CONFIG = {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': None, 'dropout': 0.2}
+    BEST_PATCHTST_CONFIG = {'patch_len': 8, 'stride': 4, 'd_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': None, 'dropout': 0.2}
 
 # Hiperparámetros de entrenamiento
 BATCH_SIZE = 32
@@ -19,7 +39,7 @@ EPOCHS = 40
 # Hiperparámetros Temporales y Target
 K = 5
 BASELINE_WINDOW = 60
-SEQUENCE_LENGTH = 60
+SEQUENCE_LENGTH = 20
 START_DATE = '2000-01-01'
 END_DATE = '2026-05-01'
 
@@ -35,7 +55,7 @@ COST_BPS = 5
 RISK_AVERSION = 6.0
 
 # Rutas del Proyecto
-RESULTS_DIR = 'results'
+RESULTS_DIR = f'results/{TARGET_TYPE}'
 FIGURES_DIR = f'{RESULTS_DIR}/figures'
 METRICS_DIR = f'{RESULTS_DIR}/metrics'
 MODELS_DIR = f'{RESULTS_DIR}/models'
@@ -104,6 +124,27 @@ TCN_CONFIGS = [
     {'num_channels': (32, 32, 16, 16), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2}
 ]
 
+
+LSTM_ATT_CONFIGS = [
+    # Una capa - Regularizadas / Compactas
+    {'num_layers': 1, 'hidden_dim': 16, 'dense_dim': 8,    'dropout': 0.2},
+    {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 8,    'dropout': 0.2},
+    
+    # Una capa - Capacidad media y proyección directa
+    {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16,   'dropout': 0.2},
+    {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16,   'dropout': 0.3},
+    {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': None, 'dropout': 0.2},
+    {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 16,   'dropout': 0.2},
+    {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32,   'dropout': 0.3},
+
+    # Dos capas apiladas
+    {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8,    'dropout': 0.2},
+    {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 8,    'dropout': 0.2},
+    {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 16,   'dropout': 0.2},
+    {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 16,   'dropout': 0.3},
+    {'num_layers': 2, 'hidden_dim': 64, 'dense_dim': 16,   'dropout': 0.3}
+]
+
 ENCODER_CONFIGS = [
     # Una capa encoder - Muy compactas (~4k - 8k pesos)
     {'d_model': 16, 'nhead': 1, 'num_layers': 1, 'dim_feedforward': 32, 'dense_dim': 8, 'dropout': 0.2},
@@ -121,8 +162,40 @@ ENCODER_CONFIGS = [
     # Dos capas encoder apiladas (~15k - 25k pesos)
     {'d_model': 32, 'nhead': 2, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 8, 'dropout': 0.2},
     {'d_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.2},
-    {'d_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.3}
+    {'d_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.3},
+
+    # 3 capas, 8 cabezales, proyección lineal directa
+    {'d_model': 32, 'nhead': 8, 'num_layers': 3, 'dim_feedforward': 128, 'dense_dim': None, 'dropout': 0.2},
+    {'d_model': 64, 'nhead': 8, 'num_layers': 3, 'dim_feedforward': 128, 'dense_dim': None, 'dropout': 0.2},
+    {'d_model': 64, 'nhead': 8, 'num_layers': 3, 'dim_feedforward': 256, 'dense_dim': None, 'dropout': 0.3},
+    {'d_model': 96, 'nhead': 8, 'num_layers': 4, 'dim_feedforward': 256, 'dense_dim': None, 'dropout': 0.3}
 ]
+
+
+PATCHTST_CONFIGS = [
+    # Compactas / Regularizadas (1 capa, pocos canales latentes, patches locales)
+    # Ideal para L=20 o L=60 para evitar sobreajuste
+    {'patch_len': 4,  'stride': 2, 'd_model': 16, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 32,  'dense_dim': 8,    'dropout': 0.2},
+    {'patch_len': 4,  'stride': 4, 'd_model': 16, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 32,  'dense_dim': 8,    'dropout': 0.2},
+    {'patch_len': 8,  'stride': 4, 'd_model': 16, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 32,  'dense_dim': 8,    'dropout': 0.2},
+
+    # Capacidad Media (Equilibrio para L=60 y L=120)
+    {'patch_len': 8,  'stride': 4, 'd_model': 32, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 64,  'dense_dim': 16,   'dropout': 0.2},
+    {'patch_len': 8,  'stride': 4, 'd_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64,  'dense_dim': 16,   'dropout': 0.3},
+    {'patch_len': 12, 'stride': 6, 'd_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64,  'dense_dim': 16,   'dropout': 0.2},
+    {'patch_len': 12, 'stride': 12, 'd_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64,  'dense_dim': 16,   'dropout': 0.2},
+    
+    # Dos capas Encoder (Abstracción profunda entre parches)
+    {'patch_len': 8,  'stride': 4, 'd_model': 32, 'nhead': 2, 'num_layers': 2, 'dim_feedforward': 64,  'dense_dim': 16,   'dropout': 0.2},
+    {'patch_len': 8,  'stride': 4, 'd_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 64,  'dense_dim': 16,   'dropout': 0.3},
+    {'patch_len': 16, 'stride': 8, 'd_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 64,  'dense_dim': 16,   'dropout': 0.2},
+
+    # Proyección Lineal Directa (Linear Head sin capa densa intermedia, estilo PatchTST original)
+    {'patch_len': 8,  'stride': 4, 'd_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64,  'dense_dim': None, 'dropout': 0.2},
+    {'patch_len': 12, 'stride': 6, 'd_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 128, 'dense_dim': None, 'dropout': 0.3}
+]
+
+
 
 def get_config_dict():
     """Devuelve un diccionario serializable con todos los hiperparámetros."""

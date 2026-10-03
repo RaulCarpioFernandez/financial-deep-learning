@@ -6,9 +6,13 @@ import numpy as np
 import pandas as pd
 from config import *
 from data_loader import load_and_preprocess_data, FEATURE_COLS
-from validation import run_purged_walk_forward, evaluate_ml_performance
+from validation import (run_purged_walk_forward, 
+                        evaluate_classification_performance, 
+                        evaluate_regression_performance, 
+                        plot_test_temporal_series,
+                        print_distributions)
 from backtesting import run_economic_backtest
-from sklearn.metrics import roc_auc_score, accuracy_score
+from sklearn.metrics import roc_auc_score, accuracy_score, mean_squared_error
 
 def set_seed(seed=2):
     random.seed(seed)
@@ -23,26 +27,44 @@ def set_seed(seed=2):
 
 set_seed(SEED)
 
+is_classification = (TARGET_TYPE == 'excess_direction')
+def evaluate_model_performance(wf_reals, wf_preds, fold_metrics, model_name, trainable_params, plot_curves=True, save_results=True):
+    """Enruta a clasificación o regresión de forma transparente."""
+    if is_classification:
+        return evaluate_classification_performance(
+            wf_reals=wf_reals, wf_probs=wf_preds, fold_metrics=fold_metrics,
+            model_name=model_name, trainable_params=trainable_params,
+            plot_curves=plot_curves, save_results=save_results
+        )
+    else:
+        return evaluate_regression_performance(
+            wf_reals=wf_reals, wf_preds=wf_preds, fold_metrics=fold_metrics,
+            model_name=model_name, trainable_params=trainable_params,
+            plot_curves=plot_curves, save_results=save_results
+        )
 
-def run_multiseed_grid_search(model_name='lstm', configs=None, seeds=EVAL_SEEDS):
+
+
+def run_multiseed_grid_search(model_name='lstm', seeds=EVAL_SEEDS):
     for folder in [FIGURES_DIR, METRICS_DIR, MODELS_DIR, DATA_DIR]:
         os.makedirs(folder, exist_ok=True)
 
     print(f"\n[INFO] Cargando y preprocesando datos...")
     df = load_and_preprocess_data()
 
-    if configs is None:
-        config_mapping = {
-            'lstm': LSTM_CONFIGS,
-            'gru': GRU_CONFIGS,
-            'tcn': TCN_CONFIGS,
-            'encoder': ENCODER_CONFIGS,  # Listo para añadir más adelante
-        }
-        name = model_name.lower()
-        if name not in config_mapping:
-            raise ValueError(f"Modelo no reconocido o sin lista de configuraciones definida: '{model_name}'. Opciones disponibles: {list(config_mapping.keys())}")
+    config_mapping = {
+        'lstm': LSTM_CONFIGS,
+        'gru': GRU_CONFIGS,
+        'tcn': TCN_CONFIGS,
+        'lstm_att': LSTM_ATT_CONFIGS,
+        'encoder': ENCODER_CONFIGS,  
+        'patchtst': PATCHTST_CONFIGS # Listo para añadir más adelante
+    }
+    name = model_name.lower()
+    if name not in config_mapping:
+        raise ValueError(f"Modelo no reconocido o sin lista de configuraciones definida: '{model_name}'. Opciones disponibles: {list(config_mapping.keys())}")
 
-        configs = config_mapping[name]
+    configs = config_mapping[name]
 
     tuning_records = []
     cached_runs = {}
@@ -50,13 +72,13 @@ def run_multiseed_grid_search(model_name='lstm', configs=None, seeds=EVAL_SEEDS)
 
     total_runs = len(configs) * len(seeds)
     print("\n" + "═" * 84)
-    print(f"{f'GRID SEARCH MULTI-SEMILLA ({model_name.upper()})':^84}")
+    print(f"{f'GRID SEARCH MULTI-SEMILLA ({model_name.upper()} - {TARGET_TYPE.upper()})':^84}")
     print(f"{f'{len(configs)} configuraciones × {len(seeds)} semillas = {total_runs} ejecuciones totales':^84}")
     print("═" * 84)
 
     for c_idx, cfg in enumerate(configs):
-        val_aucs = []
-        test_aucs = []
+        val_scores = []
+        test_scores = []
         cached_runs[c_idx] = {}
 
         print(f"\n[{c_idx + 1}/{len(configs)}] Probando Cfg: {cfg}")
@@ -64,7 +86,7 @@ def run_multiseed_grid_search(model_name='lstm', configs=None, seeds=EVAL_SEEDS)
         for s in seeds:
             set_seed(s)
             # Ejecutar Walk-Forward
-            df_wf_test, wf_probs, wf_reals, fold_metrics, trainable_params, mean_val_auc = run_purged_walk_forward(
+            df_wf_test, wf_preds, wf_reals, fold_metrics, trainable_params, mean_val_score = run_purged_walk_forward(
                 df=df,
                 feature_cols=FEATURE_COLS,
                 model_name=model_name,
@@ -79,49 +101,62 @@ def run_multiseed_grid_search(model_name='lstm', configs=None, seeds=EVAL_SEEDS)
                 seed=s
             )
 
-            # Cálculo directo y silencioso de métricas de test
-            test_auc = float(roc_auc_score(wf_reals, wf_probs))
-            
-            val_aucs.append(mean_val_auc)
-            test_aucs.append(test_auc)
+            #print(f"  --> Varianza de las predicciones: {np.var(wf_preds):.8f}")
+            #print(f"  --> Rango de predicciones: [{np.min(wf_preds):.6f}, {np.max(wf_preds):.6f}]")
+            #print(f"  --> Varianza del target real: {np.var(wf_reals):.8f}")
 
-            # Guardamos los objetos necesarios en memoria para la corrida final
+            # Cálculo de métrica de test según la naturaleza del target
+            if is_classification:
+                test_score = float(roc_auc_score(wf_reals, wf_preds))
+            else:
+                test_score = float(mean_squared_error(wf_reals, wf_preds))  # Test MSE
+
+            val_scores.append(mean_val_score)
+            test_scores.append(test_score)
+
+            # Guardamos los objetos necesarios en memoria para la ejecución final
             cached_runs[c_idx][s] = {
-                'test_auc': test_auc,
+                'test_score': test_score,
                 'df_wf_test': df_wf_test,
-                'wf_probs': wf_probs,
+                'wf_preds': wf_preds,
                 'wf_reals': wf_reals,
                 'fold_metrics': fold_metrics,
                 'trainable_params': trainable_params
             }
 
-        mean_val = float(np.mean(val_aucs))
-        std_val = float(np.std(val_aucs, ddof=1)) if len(seeds) > 1 else 0.0
-        mean_test = float(np.mean(test_aucs))
-        std_test = float(np.std(test_aucs, ddof=1)) if len(seeds) > 1 else 0.0
+        mean_val = float(np.mean(val_scores))
+        std_val = float(np.std(val_scores, ddof=1)) if len(seeds) > 1 else 0.0
+        mean_test = float(np.mean(test_scores))
+        std_test = float(np.std(test_scores, ddof=1)) if len(seeds) > 1 else 0.0
+
+        #print(f"  [Debug] Val MSEs por semilla : {[f'{v:.10f}' for v in val_scores]}")
+        #print(f"  [Debug] Test MSEs por semilla: {[f'{t:.10f}' for t in test_scores]}")
+        #print(f"  [Debug] Val Std cruda (Python): {std_val:.2e} │ Test Std cruda: {std_test:.2e}")
 
         tuning_records.append({
             'config_idx': c_idx + 1,
             'config': str(cfg),
             'trainable_params': trainable_params,
-            'val_auc_mean': mean_val,
-            'val_auc_std': std_val,
-            'test_auc_mean': mean_test,
-            'test_auc_std': std_test
+            'val_score_mean': mean_val,
+            'val_score_std': std_val,
+            'test_score_mean': mean_test,
+            'test_score_std': std_test
         })
 
         # Resumen conciso de una sola línea por configuración
-        print(f"  └──> Val AUC: {mean_val:.4f} ± {std_val:.4f} │ Test AUC: {mean_test:.4f} ± {std_test:.4f} │ Params: {trainable_params:,}")
+        score_name = "Val AUC" if is_classification else "Val MSE"
+        test_name = "Test AUC" if is_classification else "Test MSE"
+        print(f"  └──> {score_name}: {mean_val:.4f} ± {std_val:.4f} │ {test_name}: {mean_test:.4f} ± {std_test:.4f} │ Params: {trainable_params:,}")
 
-        # Guardado incremental: evita perder datos si Colab se corta
-        pd.DataFrame(tuning_records).to_csv(csv_path, index=False)
+        # Guardado incremental: evita perder datos si la ejecución se para
+        pd.DataFrame(tuning_records).to_csv(csv_path, index=False, sep=';', decimal=',', float_format='%.10f')  # Fuerza notación decimal fija (ej: 0.00000002) en lugar de notación 'e')
 
-    # 1. Ordenar tabla final de resultados por Val AUC
-    df_results = pd.DataFrame(tuning_records).sort_values(by='val_auc_mean', ascending=False)
+    # Ordenar resultados: Maximizar si es AUC (False), Minimizar si es MSE (True)
+    df_results = pd.DataFrame(tuning_records).sort_values(by='val_score_mean', ascending=(not is_classification))
     df_results.to_csv(csv_path, index=False)
     print(f"\n[INFO] Registro completo del barrido guardado en: {csv_path}")
 
-    # 2. Selección de la mejor configuración (estrictamente por validación)
+    # Selección de la mejor configuración (estrictamente por validación)
     best_row = df_results.iloc[0]
     best_c_idx = int(best_row['config_idx']) - 1
     best_cfg = configs[best_c_idx]
@@ -132,50 +167,46 @@ def run_multiseed_grid_search(model_name='lstm', configs=None, seeds=EVAL_SEEDS)
     print(f" Modelo               : {model_name.upper()}")
     print(f" Configuración Óptima : {best_cfg}")
     print(f" Parámetros           : {int(best_row['trainable_params']):,}")
-    print(f" ROC-AUC Validación   : {best_row['val_auc_mean']:.4f} ± {best_row['val_auc_std']:.4f}")
-    print(f" ROC-AUC Test OOS     : {best_row['test_auc_mean']:.4f} ± {best_row['test_auc_std']:.4f}")
+    print(f" Score Validación     : {best_row['val_score_mean']:.5f} ± {best_row['val_score_std']:.5f}")
     print("═" * 84)
 
-    # 3. Evaluación exhaustiva (ML + Backtesting) ÚNICAMENTE para la mejor corrida
+    # Evaluación exhaustiva (ML + Backtesting) ÚNICAMENTE para la mejor corrida
+   # Evaluación completa con la semilla representativa
     best_runs_by_seed = cached_runs[best_c_idx]
-    rep_seed = min(seeds, key=lambda s: abs(best_runs_by_seed[s]['test_auc'] - best_row['test_auc_mean']))
+    rep_seed = min(seeds, key=lambda s: abs(best_runs_by_seed[s]['test_score'] - best_row['test_score_mean']))
     rep_run = best_runs_by_seed[rep_seed]
 
-    print(f"\n[INFO] Generando informe completo y curvas para la semilla representativa (Seed={rep_seed}, AUC={rep_run['test_auc']:.4f})...")
-
-    ml_results = evaluate_ml_performance(
-        wf_reals=rep_run['wf_reals'],
-        wf_probs=rep_run['wf_probs'],
-        fold_metrics=rep_run['fold_metrics'],
-        model_name=model_name,
-        trainable_params=rep_run['trainable_params'],
-        plot_curves=True,
-        save_results=True
+    ml_results = evaluate_model_performance(
+        wf_reals=rep_run['wf_reals'], wf_preds=rep_run['wf_preds'],
+        fold_metrics=rep_run['fold_metrics'], model_name=model_name,
+        trainable_params=rep_run['trainable_params'], plot_curves=True, save_results=True
     )
 
-    backtest_results, financial_results = run_economic_backtest(
-        df_total=df,
-        df_test=rep_run['df_wf_test'],
-        test_probs=rep_run['wf_probs'],
-        cost_bps=COST_BPS,
-        risk_aversion=RISK_AVERSION,
+    zoom_steps = 100
+    plot_test_temporal_series(
+        dates=rep_run['df_wf_test'].index[-zoom_steps:],
+        reals=rep_run['wf_reals'][-zoom_steps:],
+        preds=rep_run['wf_preds'][-zoom_steps:],
         model_name=model_name,
-        plot_curves=True,
         save_results=True
+    )
+    
+    backtest_results, financial_results = run_economic_backtest(
+        df_total=df, df_test=rep_run['df_wf_test'], test_preds=rep_run['wf_preds'],
+        cost_bps=COST_BPS, risk_aversion=RISK_AVERSION, model_name=model_name,
+        plot_curves=True, save_results=True
     )
 
     # 4. Guardar archivo consolidado de la configuración ganadora
     full_experiment = {
         'model': model_name.upper(),
+        'target': TARGET_TYPE,
         'best_config': best_cfg,
-        'val_auc_mean': best_row['val_auc_mean'],
-        'val_auc_std': best_row['val_auc_std'],
-        'test_auc_mean': best_row['test_auc_mean'],
-        'test_auc_std': best_row['test_auc_std'],
+        'val_score_mean': best_row['val_score_mean'],
         'representative_seed': rep_seed,
         'global_config': get_config_dict(),
-        'ml_performance_rep_seed': ml_results,
-        'financial_performance_rep_seed': financial_results
+        'ml_performance': ml_results,
+        'financial_performance': financial_results
     }
 
     full_json_path = os.path.join(METRICS_DIR, f'{model_name.lower()}_best_multiseed_experiment.json')
@@ -186,26 +217,27 @@ def run_multiseed_grid_search(model_name='lstm', configs=None, seeds=EVAL_SEEDS)
 
 
 
-def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEEDS):
+
+def evaluate_multiseed_experiment(model_name='lstm', seeds=EVAL_SEEDS):
     for folder in [FIGURES_DIR, METRICS_DIR, MODELS_DIR, DATA_DIR]:
         os.makedirs(folder, exist_ok=True)
 
     df = load_and_preprocess_data()
-    if config is None:
-            config_mapping = {
-                'lstm': BEST_LSTM_CONFIG,
-                'gru': BEST_GRU_CONFIG,
-                'tcn': BEST_TCN_CONFIG,
-                'encoder': ENCODER_CONFIGS,  # Listo para añadir más adelante
-            }
-            name = model_name.lower()
-            if name not in config_mapping:
-                raise ValueError(f"Modelo no reconocido o sin lista de configuraciones definida: '{model_name}'. Opciones disponibles: {list(config_mapping.keys())}")
-    
-            config = config_mapping[name]
+
+    config_mapping = {
+        'lstm': BEST_LSTM_CONFIG,
+        'gru': BEST_GRU_CONFIG,
+        'tcn': BEST_TCN_CONFIG,
+        'encoder': BEST_ENCODER_CONFIG,  
+    }
+    name = model_name.lower()
+    if name not in config_mapping:
+        raise ValueError(f"Modelo no reconocido o sin lista de configuraciones definida: '{model_name}'. Opciones disponibles: {list(config_mapping.keys())}")
+
+    config = config_mapping[name]
 
     print("\n" + "═" * 86)
-    print(f"{f'EVALUACIÓN MULTI-SEMILLA PARA CONFIGURACIÓN FINAL ({model_name.upper()})':^86}")
+    print(f"{f'EVALUACIÓN MULTI-SEMILLA FINAL ({model_name.upper()} - {TARGET_TYPE.upper()})':^86}")
     print(f" Configuración: {config}")
     print(f" Semillas evaluadas: {seeds}")
     print("═" * 86)
@@ -218,7 +250,7 @@ def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEE
         print(f"\n▶ Ejecutando Semilla: {s}...")
         set_seed(s)
 
-        df_wf_test, wf_probs, wf_reals, fold_metrics, trainable_params, mean_val_auc = run_purged_walk_forward(
+        df_wf_test, wf_preds, wf_reals, fold_metrics, trainable_params, mean_val_score = run_purged_walk_forward(
             df=df,
             feature_cols=FEATURE_COLS,
             model_name=model_name,
@@ -235,9 +267,9 @@ def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEE
         )
 
         # 1. Métricas de ML (sin plots intermedios ni sobreescritura de archivos)
-        ml_res = evaluate_ml_performance(
+        ml_res = evaluate_model_performance(
             wf_reals=wf_reals,
-            wf_probs=wf_probs,
+            wf_preds=wf_preds,
             fold_metrics=fold_metrics,
             model_name=model_name,
             trainable_params=trainable_params,
@@ -249,7 +281,7 @@ def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEE
         bt_df, fin_res = run_economic_backtest(
             df_total=df,
             df_test=df_wf_test,
-            test_probs=wf_probs,
+            test_preds=wf_preds,
             cost_bps=COST_BPS,
             risk_aversion=RISK_AVERSION,
             model_name=model_name,
@@ -258,14 +290,27 @@ def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEE
         )
 
         # Guardar métricas por semilla
-        ml_records.append({
-            'seed': s,
-            'val_auc_mean': mean_val_auc,
-            'test_auc_global': ml_res['global_auc'],
-            'test_accuracy': ml_res['global_accuracy'],
-            'test_balanced_acc': ml_res['global_balanced_accuracy'], 
-            'test_f1_macro': ml_res['f1_macro']
-        })
+        # Registro de métricas según tipo de target
+        if is_classification:
+            ml_row = {
+                'seed': s,
+                'val_score': mean_val_score,
+                'test_auc': ml_res['global_auc'],
+                'test_acc': ml_res['global_accuracy'],
+                'test_bal_acc': ml_res['global_balanced_accuracy'],
+                'test_f1': ml_res['f1_macro']
+            }
+        else:
+            ml_row = {
+                'seed': s,
+                'val_score': mean_val_score,
+                'rmse': ml_res['rmse'],
+                'mae': ml_res['mae'],
+                'r2_score': ml_res['r2_score'],
+                'spearman_ic': ml_res['spearman_ic'],
+                'directional_hit_rate': ml_res['directional_hit_rate']
+            }
+        ml_records.append(ml_row)
 
         fin_records.append({
             'seed': s,
@@ -285,10 +330,10 @@ def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEE
 
         runs_data.append({
             'seed': s,
-            'test_auc': ml_res['global_auc'],
+            'score': ml_res['global_auc'] if is_classification else ml_res['rmse'],
             'sharpe': fin_res['Sharpe_Strategy'],
             'df_wf_test': df_wf_test,
-            'wf_probs': wf_probs,
+            'wf_preds': wf_preds,
             'wf_reals': wf_reals,
             'fold_metrics': fold_metrics,
             'trainable_params': trainable_params
@@ -307,7 +352,6 @@ def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEE
     # Cálculo de medias y desviaciones estándar
     summary_stats = []
     numeric_cols = [col for col in df_consolidated.columns if col != 'seed']
-    
     print("\n" + "═" * 86)
     print(f"{'RESUMEN ESTADÍSTICO FINAL FUERA DE MUESTRA (OOS)':^86}")
     print("═" * 86)
@@ -319,7 +363,6 @@ def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEE
         mu = np.mean(vals)
         sigma = np.std(vals, ddof=1) if len(vals) > 1 else 0.0
         min_v, max_v = np.min(vals), np.max(vals)
-        
         summary_stats.append({
             'Metric': col,
             'Mean': round(mu, 4),
@@ -327,11 +370,9 @@ def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEE
             'Min': round(min_v, 4),
             'Max': round(max_v, 4)
         })
-        
         # Formateo porcentual para retornos, volatilidades, drawdowns y accuracy
         is_pct = any(k in col.lower() for k in ['cagr', 'return', 'vol', 'mdd', 'acc', 'costs'])
         fmt = ".2%" if is_pct else ".4f"
-        
         print(f" {col:<30} │ {mu:>15{fmt}} │ {sigma:>18{fmt}} │ [{min_v:{fmt}}, {max_v:{fmt}}]")
     print("═" * 86)
 
@@ -340,27 +381,35 @@ def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEE
     pd.DataFrame(summary_stats).to_csv(summary_csv, index=False, sep=';', decimal=',')
     print(f"[INFO] Resumen estadístico guardado en: {summary_csv}")
 
-    # Seleccionar la corrida representativa (más cercana a la media de Sharpe) para graficar
+    # Seleccionar la semilla representativa (más cercana a la media de Sharpe) para graficar
     mean_sharpe = df_consolidated['Sharpe_Strategy'].mean()
     rep_run = min(runs_data, key=lambda r: abs(r['sharpe'] - mean_sharpe))
     rep_seed = rep_run['seed']
 
     print(f"\n[INFO] Generando gráficos oficiales para la semilla representativa (Seed={rep_seed}, Sharpe={rep_run['sharpe']:.3f})...")
     
-    evaluate_ml_performance(
+    evaluate_model_performance(
         wf_reals=rep_run['wf_reals'],
-        wf_probs=rep_run['wf_probs'],
+        wf_preds=rep_run['wf_preds'],
         fold_metrics=rep_run['fold_metrics'],
         model_name=model_name,
         trainable_params=rep_run['trainable_params'],
         plot_curves=True,
         save_results=True
     )
+    zoom_steps = 100
+    plot_test_temporal_series(
+        dates=rep_run['df_wf_test'].index[-zoom_steps:],
+        reals=rep_run['wf_reals'][-zoom_steps:],
+        preds=rep_run['wf_preds'][-zoom_steps:],
+        model_name=model_name,
+        save_results=True
+    )
 
     run_economic_backtest(
         df_total=df,
         df_test=rep_run['df_wf_test'],
-        test_probs=rep_run['wf_probs'],
+        test_preds=rep_run['wf_preds'],
         cost_bps=COST_BPS,
         risk_aversion=RISK_AVERSION,
         model_name=model_name,
@@ -370,18 +419,28 @@ def evaluate_multiseed_experiment(model_name='lstm', config=None, seeds=EVAL_SEE
 
 
 
-def main(model_name='tcn', config=None, seed=SEED):
+
+def main(model_name='tcn', seed=SEED):
     for folder in [FIGURES_DIR, METRICS_DIR, MODELS_DIR, DATA_DIR]:
         os.makedirs(folder, exist_ok=True)
 
     set_seed(seed)
     df = load_and_preprocess_data()
     
-    if config is None:
-        config = BEST_TCN_CONFIG if model_name.lower() == 'tcn' else BEST_LSTM_CONFIG
+    config_mapping = {
+    'lstm': BEST_LSTM_CONFIG,
+    'gru': BEST_GRU_CONFIG,
+    'tcn': BEST_TCN_CONFIG,
+    'encoder': BEST_ENCODER_CONFIG,
+    }
+    name = model_name.lower()
+    if name not in config_mapping:
+        raise ValueError(f"Modelo no reconocido o sin lista de configuraciones definida: '{model_name}'. Opciones disponibles: {list(config_mapping.keys())}")
+
+    config = config_mapping[name]
 
     print(f"\n[INFO] Ejecución puntual: {model_name.upper()} | Seed={seed} | Config={config}")
-    df_wf_test, wf_probs, wf_reals, fold_metrics, trainable_params, mean_val_auc = run_purged_walk_forward(
+    df_wf_test, wf_preds, wf_reals, fold_metrics, trainable_params, mean_val_score = run_purged_walk_forward(
         df=df,
         feature_cols=FEATURE_COLS,
         model_name=model_name,
@@ -397,9 +456,9 @@ def main(model_name='tcn', config=None, seed=SEED):
         verbose=True
     )
 
-    ml_results = evaluate_ml_performance(
+    ml_results = evaluate_model_performance(
         wf_reals=wf_reals, 
-        wf_probs=wf_probs, 
+        wf_preds=wf_preds, 
         fold_metrics=fold_metrics,
         model_name=model_name,
         trainable_params=trainable_params,
@@ -407,10 +466,19 @@ def main(model_name='tcn', config=None, seed=SEED):
         save_results=True
     )
 
+    zoom_steps = 100
+    plot_test_temporal_series(
+        dates=df_wf_test.index[-zoom_steps:],
+        reals=wf_reals[-zoom_steps:],
+        preds=wf_preds[-zoom_steps:],
+        model_name=model_name,
+        save_results=True
+    )
+
     backtest_results, financial_results = run_economic_backtest(
         df_total=df, 
         df_test=df_wf_test, 
-        test_probs=wf_probs,
+        test_preds=wf_preds,
         cost_bps=COST_BPS, 
         risk_aversion=RISK_AVERSION,
         model_name=model_name, 
@@ -422,7 +490,7 @@ def main(model_name='tcn', config=None, seed=SEED):
         'model': model_name.upper(),
         'config': get_config_dict(),
         'model_config': config,
-        'val_auc_mean': mean_val_auc,
+        'val_auc_score': mean_val_score,
         'ml_performance': ml_results,
         'financial_performance': financial_results
     }
@@ -434,14 +502,23 @@ def main(model_name='tcn', config=None, seed=SEED):
     print(f"[INFO] Registro del experimento guardado en: {full_json_path}\n")
 
 
+
+
 if __name__ == '__main__':
     # PASO 1: Búsqueda de hiperparámetros (se ejecuta una vez para encontrar la mejor config)
-    run_multiseed_grid_search(model_name='encoder', configs=ENCODER_CONFIGS, seeds=EVAL_SEEDS)
+    run_multiseed_grid_search(model_name='lstm', seeds=EVAL_SEEDS)
+    run_multiseed_grid_search(model_name='gru', seeds=EVAL_SEEDS)
+    run_multiseed_grid_search(model_name='tcn', seeds=EVAL_SEEDS)
+    run_multiseed_grid_search(model_name='encoder', seeds=EVAL_SEEDS)
+    run_multiseed_grid_search(model_name='lstm_att', seeds=EVAL_SEEDS)
+    run_multiseed_grid_search(model_name='patchtst', seeds=EVAL_SEEDS)
+
 
     # PASO 2: Evaluación multiseed rigurosa de la mejor configuración (genera tablas mu ± sigma y gráficos)
-    #evaluate_multiseed_experiment(model_name='lstm', config=BEST_LSTM_CONFIG, seeds=EVAL_SEEDS)
-    #evaluate_multiseed_experiment(model_name='gru', config=BEST_GRU_CONFIG, seeds=EVAL_SEEDS)
-    #evaluate_multiseed_experiment(model_name='tcn', config=BEST_TCN_CONFIG, seeds=EVAL_SEEDS)
+    #evaluate_multiseed_experiment(model_name='lstm', seeds=EVAL_SEEDS)
+    #evaluate_multiseed_experiment(model_name='gru', seeds=EVAL_SEEDS)
+    #evaluate_multiseed_experiment(model_name='tcn', seeds=EVAL_SEEDS)
+    #evaluate_multiseed_experiment(model_name='encoder', seeds=EVAL_SEEDS)
 
     # PASO 3 (Opcional): Prueba unitaria rápida
-    # main(model_name='encoder', config=BEST_ENCODER_CONFIG, seed=SEED)
+    #main(model_name='lstm', seed=SEED)

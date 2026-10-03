@@ -8,7 +8,7 @@
 ## Descripción del Proyecto
 
 Repositorio oficial del Trabajo de Fin de Máster:  
-**"Comparación de modelos para la predicción de series temporales financieras: ARIMA, LSTM/GRU, TCN y Transformers"**.
+**"Comparación de modelos para la predicción de series temporales financieras: ARIMA/GARCH, XGBoost, LSTM/GRU, TCN y Transformers"**.
 
 El proyecto implementa un pipeline de aprendizaje profundo y finanzas cuantitativas diseñado para evaluar la capacidad predictiva y la rentabilidad económica ajustada al riesgo sobre el índice **S&P 500 (^GSPC)**.
 
@@ -42,12 +42,17 @@ financial-deep-learning-tfm/
 ├── config.py             # Hiperparámetros globales (semillas, K, ventanas, costes)
 ├── data_loader.py            # Descarga, alineación macro (VIX, TNX, IRX) e ingeniería de features
 ├── models.py                 # Definición de PyTorch: LSTM, GRU, TCN, Transformer
+├── baselines.py              # Pipelines para modelos baseline (LogRegression, ARIMA, GARCH y XGBoost)
+├── eval_baselines.py         # Evaluación de los modelos de baseline
 ├── validation.py             # Motor Purged Walk-Forward CV y evaluación del rendimiento del modelo
 ├── backtesting.py            # Asignación de capital híbrida, métricas y multi-benchmark
 ├── main.py                   # Script de orquestación y ejecución comparativa
 │
 ├── data/                     # Caché local de series históricas en CSV
 └── results/                  # Guardado automático de resultados
-    ├── figures/              # Curvas ROC, Precision-Recall y Curvas de Riqueza (PNG/PDF)
-    ├── metrics/              # Resúmenes tabulares (CSV) y snapshots completos (JSON)
-    └── models/               # Checkpoints de pesos por pliegue (.pt)
+    └── future_return/        # Carpeta para los resultados del target de Future Return
+    └── excess_direction/     # Carpeta para los resultados del target de Excess Direction
+    └── volatility/           # Carpeta para los resultados del target de Volatility
+        ├── figures/              # Curvas ROC, Precision-Recall y Curvas de Riqueza (PNG/PDF)
+        ├── metrics/              # Resúmenes tabulares (CSV) y snapshots completos (JSON)
+        └── models/               # Checkpoints de pesos por pliegue (.pt)

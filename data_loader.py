@@ -3,7 +3,7 @@ import time
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from config import TICKER, K, BASELINE_WINDOW, DATA_DIR, START_DATE, END_DATE
+from config import TARGET_TYPE, TICKER, K, BASELINE_WINDOW, DATA_DIR, START_DATE, END_DATE
 
 
 # Carpeta donde se guardarán los archivos CSV en local
@@ -113,17 +113,33 @@ def load_and_preprocess_data():
     df['Yield_Curve_Slope'] = (df['TNX_10Y'] - df['IRX_3M']) / 100.0  # Pendiente 10Y - 3M
     df['Yield_Slope_Change_5'] = df['Yield_Curve_Slope'] - df['Yield_Curve_Slope'].shift(5)
     
-    # --- TARGET RELATIVO A LA MEDIANA HISTÓRICA ---
+    # Targets
+    # A) Retorno futuro a K sesiones
     df['FutureReturn_K'] = np.log(df['Close'].shift(-K) / df['Close'])
+    
+    # B) Retorno relativo / exceso sobre la mediana
     df['Log_Return_K'] = np.log(df['Close']) - np.log(df['Close'].shift(K))
     df['Baseline_Return'] = df['Log_Return_K'].rolling(window=BASELINE_WINDOW).median()
     df['Excess_Return_K'] = df['FutureReturn_K'] - df['Baseline_Return']
-    df['Target'] = (df['Excess_Return_K'] > 0).astype(int)
+    df['Excess_Direction'] = (df['Excess_Return_K'] > 0).astype(int)
+
+    # C) Volatilidad realizada futura a K sesiones (desviación típica anualizada)
+    # std de los retornos diarios dentro de la ventana forward de K días
+    forward_returns = df['Log_Return_1'].shift(-1)  # Retorno a partir de t+1
+    # Construcción vectorizada explícita sin rolling inverso:
+    df['Volatility'] = (pd.concat([df['Log_Return_1'].shift(-i) for i in range(1, K + 1)], axis=1).std(axis=1) * np.sqrt(252))
+
+    # Asignación del Target según TARGET_TYPE
+    if TARGET_TYPE == 'excess_direction':
+        df['Target'] = df['Excess_Direction']
+    elif TARGET_TYPE == 'future_return':
+        df['Target'] = df['FutureReturn_K']
+    elif TARGET_TYPE == 'volatility':
+        df['Target'] = df['Volatility']
+    else:
+        raise ValueError(f"TARGET_TYPE no válido: {TARGET_TYPE}")
 
     df = df.replace([np.inf, -np.inf], np.nan).dropna()
-
-    # Cálculo del retorno a K días de negociación
-    #df['Target'] = (df['FutureReturn_K'] > 0).astype(int)
 
     return df
 

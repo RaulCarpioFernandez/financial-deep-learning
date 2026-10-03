@@ -8,12 +8,12 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler
 from models import get_model, count_parameters
-from config import SEED, DEVICE, EPOCHS, BATCH_SIZE, FIGURES_DIR, METRICS_DIR, MODELS_DIR
+from config import TARGET_TYPE, SEED, DEVICE, EPOCHS, BATCH_SIZE, FIGURES_DIR, METRICS_DIR, MODELS_DIR
 import matplotlib.pyplot as plt
+from scipy.stats import spearmanr, pearsonr
 from sklearn.metrics import (
-    accuracy_score, balanced_accuracy_score, roc_auc_score, 
-    classification_report, roc_curve, auc, 
-    precision_recall_curve, average_precision_score
+    accuracy_score, balanced_accuracy_score, roc_auc_score, classification_report, roc_curve, auc, 
+    precision_recall_curve, average_precision_score, mean_squared_error, mean_absolute_error, r2_score
 )
 
 # Creación de Secuencias Continuas
@@ -60,9 +60,10 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
         )
     
     all_test_indices = []
-    all_test_probs = []
+    all_test_preds = []
     all_test_reals = []
     fold_metrics = []
+    val_score_folds = []
 
     window_header = f"ROLLING WINDOW ({train_size}d)" if window_type == 'rolling' else "EXPANDING WINDOW"
 
@@ -71,8 +72,6 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
         print(f"{'INICIANDO PURGED WALK-FORWARD CROSS-VALIDATION':^78}")
         print(f"{f'({window_header} │ {n_splits} Pliegues │ Val: {val_size}d │ Test: {test_size}d │ Gap: {k}d)':^78}")
         print("═" * 78)
-
-    val_auc_folds = []
 
     for fold in range(n_splits):
         # Definición de límites temporales del pliegue
@@ -134,21 +133,29 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
         model = get_model(model_name, input_dim=len(feature_cols), **model_config).to(DEVICE)
         trainable_params = count_parameters(model)
 
-        # Cálculo del balance en Train para calcular la pérdida ponderada
-        num_pos = np.sum(y_raw[train_start:train_end] == 1)
-        num_neg = np.sum(y_raw[train_start:train_end] == 0)
-        pos_weight = torch.tensor([num_neg / (num_pos + 1e-9)], dtype=torch.float32).to(DEVICE)
-        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        # Configuración de Pérdida y Métrica de Early Stopping en función del Target
+        is_classification = (TARGET_TYPE == 'excess_direction')
+
+        if is_classification:
+            num_pos = np.sum(y_raw[train_start:train_end] == 1)
+            num_neg = np.sum(y_raw[train_start:train_end] == 0)
+            pos_weight = torch.tensor([num_neg / (num_pos + 1e-9)], dtype=torch.float32).to(DEVICE)
+            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+            scheduler_mode = 'max'
+            best_val_score = -float('inf')
+        else:
+            criterion = nn.HuberLoss(delta=1.0)
+            scheduler_mode = 'min'
+            best_val_score = float('inf')
+
 
         #Definimos el optimizador y el scheduler del learning rate
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0005, weight_decay=1e-4)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode=scheduler_mode, factor=0.5, patience=3)
 
         # Entrenamiento con Early Stopping por ROC-AUC
         patience = 6
         patience_counter = 0
-        #best_val_loss = float('inf')
-        best_val_auc = -float('inf')
         best_model_weights = None
 
         for epoch in range(EPOCHS):
@@ -167,18 +174,24 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
             with torch.no_grad():
                 val_logits = model(X_val_t.to(DEVICE))
                 val_loss = criterion(val_logits, y_val_t.to(DEVICE)).item()
-                # Conversión universal sin errores
-                val_probs = torch.sigmoid(val_logits).detach().cpu().numpy().ravel()
                 y_val_np = y_val_t.detach().cpu().numpy().ravel()
-                val_auc = roc_auc_score(y_val_np, val_probs)
-            scheduler.step(val_auc)
 
-            if verbose:
-                if (epoch + 1) % 2 == 0 or epoch == 0:
-                    print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f} | Val AUC: {val_auc:.4f}")
+            if is_classification:
+                val_probs = torch.sigmoid(val_logits).detach().cpu().numpy().ravel()
+                val_score = roc_auc_score(y_val_np, val_probs)
+                improved = val_score > best_val_score
+            else:
+                val_preds = val_logits.detach().cpu().numpy().ravel()
+                val_score = mean_squared_error(y_val_np, val_preds)
+                improved = val_score < best_val_score
 
-            if val_auc > best_val_auc:
-                best_val_auc = val_auc
+            scheduler.step(val_score)
+
+            if verbose and ((epoch + 1) % 2 == 0 or epoch == 0):
+                print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f} | Val Score: {val_score:.4f}")
+
+            if improved:
+                best_val_score = val_score
                 best_model_weights = copy.deepcopy(model.state_dict())
                 patience_counter = 0
             else:
@@ -188,10 +201,9 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
                         print(f"Early stopping en época {epoch+1}")
                     break
             
-        val_auc_folds.append(best_val_auc)
+        val_score_folds.append(best_val_score)
         model.load_state_dict(best_model_weights)
         
-
         # Guardar pesos en /results/models
         os.makedirs(MODELS_DIR, exist_ok=True)
         torch.save(best_model_weights, os.path.join(MODELS_DIR, f'{model_name.lower()}_fold_{fold+1}.pt'))
@@ -199,39 +211,53 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
         # EVALUACIÓN EN TEST (fuera de la muestra)
         model.eval()
         with torch.no_grad():
-            test_logits = model(X_test_t.to(DEVICE))
-            test_probs = torch.sigmoid(test_logits).detach().cpu().numpy().ravel()
+            test_out = model(X_test_t.to(DEVICE))
             y_test_real = y_test_t.detach().cpu().numpy().ravel()
 
-        threshold = 0.5
-        test_predictions = (test_probs > threshold).astype(int)
+        if is_classification:
+            test_probs = torch.sigmoid(test_out).detach().cpu().numpy().ravel()
+            roc_auc = roc_auc_score(y_test_real, test_probs)
 
-        acc = accuracy_score(y_test_real, test_predictions)
-        balanced_acc = balanced_accuracy_score(y_test_real, test_predictions)
-        roc_auc = roc_auc_score(y_test_real, test_probs)
+            decision_threshold = 0.5
+            test_predictions = (test_probs > decision_threshold).astype(int)
+            acc = accuracy_score(y_test_real, test_predictions)
+            balanced_acc = balanced_accuracy_score(y_test_real, test_predictions)
+
+            fold_metrics.append({'fold': fold + 1, 'auc': roc_auc, 'acc': acc, 'bal_acc': balanced_acc, 'samples': len(y_test_real)})
+            all_test_preds.extend(test_probs)
+
+            if verbose:
+                print(f"  └─> Test Ciego Pliegue {fold + 1}: ROC-AUC = {roc_auc:.4f} │ Balanced Accuracy = {balanced_acc*100:.2f}%")
+        else:
+            # Regresión continua: la salida de model() son las predicciones continuas directas
+            test_preds = test_out.detach().cpu().numpy().ravel()
+            fold_rmse = np.sqrt(mean_squared_error(y_test_real, test_preds))
+            fold_r2 = r2_score(y_test_real, test_preds)
+
+            fold_metrics.append({'fold': fold + 1, 'rmse': fold_rmse, 'r2': fold_r2, 'samples': len(y_test_real)})
+            all_test_preds.extend(test_preds)  # Almacena las predicciones continuas
+
+            if verbose:
+                print(f"  └─> Test Ciego Pliegue {fold + 1}: RMSE = {fold_rmse:.4f} │ R^2 = {fold_r2*100:.2f}%")
+            
         
-        fold_metrics.append({'fold': fold + 1, 'auc': roc_auc, 'acc': acc, 'samples': len(y_test_real)})
-        if verbose:
-            print(f"  └─> Test Ciego Pliegue {fold + 1}: ROC-AUC = {roc_auc:.4f} │ Accuracy = {acc*100:.2f}%")
-
         all_test_indices.extend(list(df.index[test_start:test_end]))
-        all_test_probs.extend(test_probs)
         all_test_reals.extend(y_test_real)
 
-    # 8. Consolidación Global
-    mean_val_auc = np.mean(val_auc_folds)
+    # Consolidación Global
+    mean_val_score = float(np.mean(val_score_folds))
     df_wf_test = df.loc[all_test_indices].copy()
-    wf_probs = np.array(all_test_probs, dtype=np.float64)
-    wf_reals = np.array(all_test_reals, dtype=np.int32)    
+    wf_preds = np.array(all_test_preds, dtype=np.float64)
+    wf_reals = np.array(all_test_reals, dtype=np.float64 if not is_classification else np.int32)
 
     if verbose:
-        print("")
-        print(f"Validation ROC-AUC medio: {mean_val_auc:.4f}")
+        score_label = "ROC-AUC" if is_classification else "MSE"
+        print(f"\nValidation {score_label} medio: {mean_val_score:.4f}")
 
-    return df_wf_test, wf_probs, wf_reals, fold_metrics, trainable_params, mean_val_auc
+    return df_wf_test, wf_preds, wf_reals, fold_metrics, trainable_params, mean_val_score
 
 
-def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm', trainable_params=0, plot_curves=True, save_results=True):
+def evaluate_classification_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm', trainable_params=0, plot_curves=True, save_results=True):
     """
     Calcula, imprime y grafica el rendimiento global fuera de muestra del modelo de ML.
     """
@@ -240,8 +266,8 @@ def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm',
         os.makedirs(FIGURES_DIR, exist_ok=True)
         os.makedirs(METRICS_DIR, exist_ok=True)
 
-    optimal_threshold = np.median(wf_probs) #se puede fijar a 0.5
-    global_predictions = (wf_probs > optimal_threshold).astype(int)
+    decision_threshold = 0.5 # se puede calcular como np.median(wf_probs) 
+    global_predictions = (wf_probs > decision_threshold).astype(int)
     global_acc = accuracy_score(wf_reals, global_predictions)
     global_balanced_acc = balanced_accuracy_score(wf_reals, global_predictions)
     global_auc = roc_auc_score(wf_reals, wf_probs)
@@ -258,7 +284,7 @@ def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm',
     print(f"{'EVALUACIÓN GLOBAL DE MACHINE LEARNING (CONCATENACIÓN WALK-FORWARD)':^78}")
     print("═" * 78)
     print(f" Parámetros Entrenables      : {trainable_params:,} pesos")
-    print(f" Muestras Totales Acumuladas : {len(wf_reals)} sesiones | Umbral de Decisión (Calibrado): {optimal_threshold:.2f}")
+    print(f" Muestras Totales Acumuladas : {len(wf_reals)} sesiones | Umbral de Decisión (Calibrado): {decision_threshold:.2f}")
     print(f" ROC-AUC Global              : {global_auc:.4f} (Promedio entre pliegues: {np.mean([m['auc'] for m in fold_metrics]):.4f})")
     print(f" Accuracy / Balanced Acc     : {global_acc*100:.2f}% / {global_balanced_acc*100:.2f}%")
     print("─" * 78)
@@ -315,7 +341,7 @@ def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm',
     ml_results = {
         'model': model_name.upper(),
         'trainable_params': trainable_params,
-        'optimal_threshold': optimal_threshold,
+        'optimal_threshold': decision_threshold,
         'global_auc': global_auc,
         'mean_fold_auc': mean_fold_auc,
         'global_accuracy': global_acc,
@@ -350,62 +376,213 @@ def evaluate_ml_performance(wf_reals, wf_probs, fold_metrics, model_name='lstm',
     return ml_results
 
 
-# MOSTRAMOS POR CONSOLA LA DISTRIBUCIÓN DE TARGETS Y DE CLASES
+
+
+def evaluate_regression_performance(wf_reals, wf_preds, fold_metrics, model_name='lstm', trainable_params=0, plot_curves=True, save_results=True):
+    """
+    Calcula, imprime y grafica el rendimiento global de regresión fuera de muestra.
+    
+    Métricas calculadas:
+    --------------------
+    - RMSE: Raíz del error cuadrático medio.
+    - MAE: Error absoluto medio.
+    - R² OOS: Coeficiente de determinación fuera de muestra.
+    - Pearson Corr (r): Correlación lineal entre predicciones y valores reales.
+    - Spearman Corr (IC - Information Coefficient): Correlación de rangos (clave en carteras cuantitativas).
+    - Hit Rate direccional: Porcentaje de acierto en el signo (signo predicho vs signo real).
+    """
+
+    if save_results:
+        os.makedirs(FIGURES_DIR, exist_ok=True)
+        os.makedirs(METRICS_DIR, exist_ok=True)
+
+    wf_reals = np.array(wf_reals, dtype=np.float64)
+    wf_preds = np.array(wf_preds, dtype=np.float64)
+    
+    # Métricas de Error y Bondad de Ajuste
+    mse = mean_squared_error(wf_reals, wf_preds)
+    rmse = np.sqrt(mse)
+    mae = mean_absolute_error(wf_reals, wf_preds)
+    r2 = r2_score(wf_reals, wf_preds)
+
+    # Correlaciones (Information Coefficient)
+    pearson_corr, p_val_pearson = pearsonr(wf_preds, wf_reals)
+    spearman_ic, p_val_spearman = spearmanr(wf_preds, wf_reals)
+
+    # Hit Rate Direccional Implícito (Sign Match)
+    directional_hit_rate = np.mean(np.sign(wf_preds) == np.sign(wf_reals))
+
+    # Promedio entre pliegues individuales
+    mean_fold_rmse = float(np.mean([m['rmse'] for m in fold_metrics])) if fold_metrics and 'rmse' in fold_metrics[0] else rmse
+    mean_fold_r2 = float(np.mean([m['r2'] for m in fold_metrics])) if fold_metrics and 'r2' in fold_metrics[0] else r2
+
+    # Informe en Consola
+    print("\n" + "═" * 78)
+    print(f"{'EVALUACIÓN GLOBAL DE REGRESIÓN (CONCATENACIÓN WALK-FORWARD)':^78}")
+    print("═" * 78)
+    print(f" Parámetros Entrenables      : {trainable_params:,} pesos")
+    print(f" Muestras Totales Acumuladas : {len(wf_reals)} sesiones")
+    print("─" * 78)
+    print(f" {'MÉTRICA':<30} │ {'VALOR GLOBAL':>18} │ {'PROMEDIO FOLDS':>18}")
+    print("─" * 78)
+    print(f" {'RMSE (Root Mean Sq Error)':<30} │ {rmse:>18.5f} │ {mean_fold_rmse:>18.5f}")
+    print(f" {'MAE (Mean Absolute Error)':<30} │ {mae:>18.5f} │ {'N/A':>18}")
+    print(f" {'R² Fuera de Muestra (OOS)':<30} │ {r2:>18.5f} │ {mean_fold_r2:>18.5f}")
+    print(f" {'Pearson Correlation (r)':<30} │ {pearson_corr:>18.4f} (p={p_val_pearson:.1e}) │ {'N/A':>18}")
+    print(f" {'Spearman IC (Rank Corr)':<30} │ {spearman_ic:>18.4f} (p={p_val_spearman:.1e}) │ {'N/A':>18}")
+    #print(f" {'Directional Hit Rate (Sign)':<30} │ {directional_hit_rate*100:>17.2f}% │ {'N/A':>18}")
+    print("═" * 78)
+
+    # Gráficas Diagnósticas de Regresión
+    if plot_curves:
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+        # Dispersión Predicción vs Real con recta de identidad y tendencia
+        axes[0].scatter(wf_reals, wf_preds, alpha=0.35, color='tab:blue', edgecolors='none', s=20)
+        # Línea de 45 grados (predicción perfecta)
+        min_val = min(np.min(wf_reals), np.min(wf_preds))
+        max_val = max(np.max(wf_reals), np.max(wf_preds))
+        axes[0].plot([min_val, max_val], [min_val, max_val], 'r--', lw=1.5, label='Ideal (y = x)')
+        
+        # Ajuste lineal empírico
+        if np.std(wf_preds) > 1e-8:
+            m_fit, b_fit = np.polyfit(wf_reals, wf_preds, 1)
+            axes[0].plot(wf_reals, m_fit * wf_reals + b_fit, 'k-', lw=1.2, label=f'Ajuste (Pendiente={m_fit:.2f})')
+
+        axes[0].set_title(f'Real vs Predicho (Spearman IC = {spearman_ic:.3f})', fontsize=11, fontweight='bold')
+        axes[0].set_xlabel('Valor Real')
+        axes[0].set_ylabel('Predicción del Modelo')
+        axes[0].legend(loc='upper left')
+        axes[0].grid(True, linestyle=':', alpha=0.5)
+
+        # Histograma de Residuos (Errores e = y - ŷ)
+        residuals = wf_reals - wf_preds
+        axes[1].hist(residuals, bins=50, color='tab:purple', edgecolor='black', alpha=0.7, density=True)
+        axes[1].axvline(0, color='red', linestyle='--', lw=1.5, label=f'Media: {np.mean(residuals):.5f}')
+        axes[1].set_title(f'Distribución de Residuos (RMSE = {rmse:.5f})', fontsize=11, fontweight='bold')
+        axes[1].set_xlabel('Residuo (Real - Predicho)')
+        axes[1].set_ylabel('Densidad')
+        axes[1].legend(loc='upper right')
+        axes[1].grid(True, linestyle=':', alpha=0.5)
+
+        plt.tight_layout()
+
+        if save_results:
+            fig_path = os.path.join(FIGURES_DIR, f'{model_name.lower()}_regression_diagnostics.png')
+            plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+            print(f"[INFO] Gráficos de regresión guardados en: {fig_path}")
+
+        plt.show()
+
+    # Empaquetado de Resultados
+    ml_results = {
+        'model': model_name.upper(),
+        'trainable_params': trainable_params,
+        'rmse': float(rmse),
+        'mae': float(mae),
+        'r2_score': float(r2),
+        'pearson_corr': float(pearson_corr),
+        'spearman_ic': float(spearman_ic),
+        'directional_hit_rate': float(directional_hit_rate),
+        'mean_fold_rmse': mean_fold_rmse,
+        'mean_fold_r2': mean_fold_r2,
+        'fold_metrics': fold_metrics
+    }
+
+    if save_results:
+        # Guardar JSON completo
+        json_path = os.path.join(METRICS_DIR, f'{model_name.lower()}_regression_metrics.json')
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(ml_results, f, indent=4, ensure_ascii=False)
+            
+        # Guardar CSV tabular resumen
+        df_summary = pd.DataFrame([{
+            'Model': model_name.upper(),
+            'Trainable_Params': trainable_params,
+            'RMSE': rmse,
+            'MAE': mae,
+            'R2_Score': r2,
+            'Pearson_Corr': pearson_corr,
+            'Spearman_IC': spearman_ic,
+            'Directional_Hit_Rate': directional_hit_rate
+        }])
+        csv_path = os.path.join(METRICS_DIR, f'{model_name.lower()}_regression_summary.csv')
+        df_summary.to_csv(csv_path, index=False)
+        print(f"[INFO] Métricas de regresión guardadas en: {json_path} y {csv_path}")
+
+    return ml_results
+
+
+
+def plot_test_temporal_series(dates, reals, preds, model_name='lstm', save_results=True):
+    """
+    Genera un gráfico cronológico continuo del Target Real vs la Predicción
+    a lo largo de todo el periodo fuera de muestra (Test acumulado del Walk-Forward).
+    """
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 7), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+
+    is_class = (TARGET_TYPE == 'excess_direction')
+    reals = np.asarray(reals)
+    preds = np.asarray(preds)
+
+    if is_class:
+        # Probabilidades predichas frente a clases reales
+        ax1.scatter(dates, reals, color='tab:gray', alpha=0.35, s=15, label='Etiqueta Real {0, 1}')
+        ax1.plot(dates, preds, color='tab:blue', lw=1.2, label=f'Probabilidad Predicha {model_name.upper()}')
+        ax1.axhline(0.5, color='red', linestyle='--', lw=1, alpha=0.7, label='Umbral de Decisión (0.5)')
+        ax1.set_ylabel('Probabilidad / Clase')
+        ax1.set_ylim(-0.05, 1.05)
+    else:
+        # Regresión continua (retorno acumulado o volatilidad)
+        ax1.plot(dates, reals, color='black', lw=1.3, label='Target Real ($y_t$)', alpha=0.85)
+        ax1.plot(dates, preds, color='tab:blue', lw=1.3, label=f'Predicción {model_name.upper()} ($\hat{{y}}_t$)', alpha=0.85)
+        ax1.set_ylabel(f'Valor ({TARGET_TYPE})')
+
+    ax1.set_title(f'Seguimiento Temporal Fuera de Muestra (Test Walk-Forward): {model_name.upper()}', fontsize=12, fontweight='bold')
+    ax1.legend(loc='upper right')
+    ax1.grid(True, linestyle=':', alpha=0.5)
+
+    # Panel inferior: Residuales o Divergencia
+    if is_class:
+        residuals = preds - reals  # Error de calibración puntual
+        ax2.plot(dates, residuals, color='tab:purple', lw=1.0, label='Error de Probabilidad ($\hat{p} - y$)')
+        ax2.axhline(0, color='black', linestyle=':', lw=1)
+        ax2.set_ylabel('Error')
+        ax2.set_ylim(-1.05, 1.05)
+    else:
+        residuals = reals - preds
+        ax2.plot(dates, residuals, color='tab:red', lw=1.0, label='Residuo ($y_t - \hat{y}_t$)', alpha=0.75)
+        ax2.axhline(0, color='black', linestyle=':', lw=1)
+        ax2.set_ylabel('Residuo')
+
+    ax2.set_xlabel('Fecha')
+    ax2.legend(loc='lower right')
+    ax2.grid(True, linestyle=':', alpha=0.5)
+
+    plt.tight_layout()
+
+    if save_results:
+        os.makedirs(FIGURES_DIR, exist_ok=True)
+        fig_path = os.path.join(FIGURES_DIR, f'{model_name.lower()}_temporal_tracking.png')
+        plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+        print(f"[INFO] Gráfico temporal guardado en: {fig_path}")
+
+    plt.show()
+
+
+
+# MOSTRAMOS POR CONSOLA LA DISTRIBUCIÓN DE TARGETS Y CLASES
 def print_distributions(df, k=5):
-    n = len(df)
-    train_end = int(n * 0.70)
-    val_start = train_end + k
-    val_end = int(n * 0.85)
-    test_start = val_end + k
-
-    print("\n" + "=" * 60)
-    print("DISTRIBUCIÓN DE TARGETS")
-    print("=" * 60)
-
-    for target_name, target_col in [
-        ("Directional", "Target_Directional"),
-        ("Relative", "Target_Relative")
-    ]:
-
-        print(f"\n{target_name} target:")
-
-        for split_name, start, end in [
-            ("Train", 0, train_end),
-            ("Validation", val_start, val_end),
-            ("Test", test_start, len(df))
-        ]:
-            y_split = df[target_col].iloc[start:end]
-
-            pct_positive = y_split.mean() * 100
-            pct_negative = (1 - y_split.mean()) * 100
-
-            print(
-                f"  {split_name:<12}: "
-                f"Class 0 = {pct_negative:5.2f}% | "
-                f"Class 1 = {pct_positive:5.2f}%"
-            )
-
-    print("\n" + "=" * 65)
-    print("DISTRIBUCIÓN DE CLASES - CLASE 1")
-    print("=" * 65)
-
-    print(f"{'Target':<20} {'Train':>12} {'Validation':>12} {'Test':>12}")
-    print("-" * 65)
-
-    for target_name, target_col in [
-        ("Directional", "Target_Directional"),
-        ("Relative", "Target_Relative")
-    ]:
-        train_pct = df[target_col].iloc[:train_end].mean() * 100
-        val_pct = df[target_col].iloc[val_start:val_end].mean() * 100
-        test_pct = df[target_col].iloc[test_start:].mean() * 100
-
-        print(
-            f"{target_name:<20} "
-            f"{train_pct:>11.2f}% "
-            f"{val_pct:>11.2f}% "
-            f"{test_pct:>11.2f}%"
-        )
-
-    print("=" * 65)
-    print("Los porcentajes representan la proporción de clase 1.")
+    if TARGET_TYPE == 'excess_direction':
+        conteo = df['Target'].value_counts()  # Conteo absoluto de muestras por clase
+        proporcion = df['Target'].value_counts(normalize=True) * 100 # Proporción porcentual
+        print("\n" + "=" * 65)
+        print("DISTRIBUCIÓN GLOBAL DEL TARGET (CLASIFICACIÓN)")
+        print("=" * 65)
+        for clase, n in conteo.items():
+            print(f"Clase {clase}: {n:,} muestras ({proporcion[clase]:.2f}%)")
+    else:
+        print("\n" + "=" * 65)
+        print(f"ESTADÍSTICAS DESCRIPTIVAS DEL TARGET ({TARGET_TYPE.upper()})")
+        print("=" * 65)
+        print(df['Target'].describe().to_string())
