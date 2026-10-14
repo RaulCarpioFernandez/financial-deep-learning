@@ -150,7 +150,7 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
 
 
         #Definimos el optimizador y el scheduler del learning rate
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.0005, weight_decay=1e-4)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.0005, weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode=scheduler_mode, factor=0.5, patience=3)
 
         # Entrenamiento con Early Stopping por ROC-AUC
@@ -252,7 +252,7 @@ def run_purged_walk_forward(df, feature_cols, model_name='lstm', model_config=No
 
     if verbose:
         score_label = "ROC-AUC" if is_classification else "MSE"
-        print(f"\nValidation {score_label} medio: {mean_val_score:.4f}")
+        print(f"\nValidation {score_label} medio: {mean_val_score:.5f}")
 
     return df_wf_test, wf_preds, wf_reals, fold_metrics, trainable_params, mean_val_score
 

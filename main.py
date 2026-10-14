@@ -170,7 +170,7 @@ def run_multiseed_grid_search(model_name='lstm', seeds=EVAL_SEEDS):
     print(f" Score Validación     : {best_row['val_score_mean']:.5f} ± {best_row['val_score_std']:.5f}")
     print("═" * 84)
 
-    # Evaluación exhaustiva (ML + Backtesting) ÚNICAMENTE para la mejor corrida
+   # Evaluación exhaustiva (ML + Backtesting) ÚNICAMENTE para la mejor ejecución
    # Evaluación completa con la semilla representativa
     best_runs_by_seed = cached_runs[best_c_idx]
     rep_seed = min(seeds, key=lambda s: abs(best_runs_by_seed[s]['test_score'] - best_row['test_score_mean']))
@@ -228,7 +228,9 @@ def evaluate_multiseed_experiment(model_name='lstm', seeds=EVAL_SEEDS):
         'lstm': BEST_LSTM_CONFIG,
         'gru': BEST_GRU_CONFIG,
         'tcn': BEST_TCN_CONFIG,
+        'lstm_att': BEST_LSTMATT_CONFIG,
         'encoder': BEST_ENCODER_CONFIG,  
+        'patchtst': BEST_PATCHTST_CONFIG
     }
     name = model_name.lower()
     if name not in config_mapping:
@@ -428,10 +430,12 @@ def main(model_name='tcn', seed=SEED):
     df = load_and_preprocess_data()
     
     config_mapping = {
-    'lstm': BEST_LSTM_CONFIG,
-    'gru': BEST_GRU_CONFIG,
-    'tcn': BEST_TCN_CONFIG,
-    'encoder': BEST_ENCODER_CONFIG,
+        'lstm': BEST_LSTM_CONFIG,
+        'gru': BEST_GRU_CONFIG,
+        'tcn': BEST_TCN_CONFIG,
+        'lstm_att': BEST_LSTMATT_CONFIG,
+        'encoder': BEST_ENCODER_CONFIG,  
+        'patchtst': BEST_PATCHTST_CONFIG
     }
     name = model_name.lower()
     if name not in config_mapping:
@@ -506,19 +510,21 @@ def main(model_name='tcn', seed=SEED):
 
 if __name__ == '__main__':
     # PASO 1: Búsqueda de hiperparámetros (se ejecuta una vez para encontrar la mejor config)
-    run_multiseed_grid_search(model_name='lstm', seeds=EVAL_SEEDS)
-    run_multiseed_grid_search(model_name='gru', seeds=EVAL_SEEDS)
-    run_multiseed_grid_search(model_name='tcn', seeds=EVAL_SEEDS)
-    run_multiseed_grid_search(model_name='encoder', seeds=EVAL_SEEDS)
-    run_multiseed_grid_search(model_name='lstm_att', seeds=EVAL_SEEDS)
-    run_multiseed_grid_search(model_name='patchtst', seeds=EVAL_SEEDS)
+    #run_multiseed_grid_search(model_name='lstm', seeds=EVAL_SEEDS)
+    #run_multiseed_grid_search(model_name='gru', seeds=EVAL_SEEDS)
+    #run_multiseed_grid_search(model_name='tcn', seeds=EVAL_SEEDS)
+    #run_multiseed_grid_search(model_name='encoder', seeds=EVAL_SEEDS)
+    #run_multiseed_grid_search(model_name='lstm_att', seeds=EVAL_SEEDS)
+    #run_multiseed_grid_search(model_name='patchtst', seeds=EVAL_SEEDS)
 
 
     # PASO 2: Evaluación multiseed rigurosa de la mejor configuración (genera tablas mu ± sigma y gráficos)
-    #evaluate_multiseed_experiment(model_name='lstm', seeds=EVAL_SEEDS)
-    #evaluate_multiseed_experiment(model_name='gru', seeds=EVAL_SEEDS)
-    #evaluate_multiseed_experiment(model_name='tcn', seeds=EVAL_SEEDS)
-    #evaluate_multiseed_experiment(model_name='encoder', seeds=EVAL_SEEDS)
-
+    evaluate_multiseed_experiment(model_name='lstm', seeds=EVAL_SEEDS)
+    evaluate_multiseed_experiment(model_name='gru', seeds=EVAL_SEEDS)
+    evaluate_multiseed_experiment(model_name='tcn', seeds=EVAL_SEEDS)
+    evaluate_multiseed_experiment(model_name='lstm_att', seeds=EVAL_SEEDS)
+    evaluate_multiseed_experiment(model_name='encoder', seeds=EVAL_SEEDS)
+    evaluate_multiseed_experiment(model_name='patchtst', seeds=EVAL_SEEDS)
+    
     # PASO 3 (Opcional): Prueba unitaria rápida
-    #main(model_name='lstm', seed=SEED)
+    #main(model_name='encoder', seed=SEED)

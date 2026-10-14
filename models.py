@@ -261,7 +261,8 @@ class TransformerEncoder(nn.Module):
             dim_feedforward=dim_feedforward,
             dropout=dropout,
             activation='gelu',
-            batch_first=True  # Formato: (batch_size, seq_len, d_model)
+            batch_first=True,  # Formato: (batch_size, seq_len, d_model)
+            norm_first=True
         )
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         
@@ -322,11 +323,8 @@ class PatchTST(nn.Module):
         self.patch_len = patch_len
         self.stride = stride
         self.d_model = d_model
-
-        # Número exacto de parches a lo largo de la dimensión temporal
-        self.num_patches = ((seq_len - patch_len) // stride) + 1
         
-        # Proyección y Codificación Posicional a nivel de Patches
+        # Proyección y Codificación Posicional a nivel de parches
         self.patch_projection = nn.Linear(patch_len, d_model)
         self.pos_encoder = PositionalEncoding(d_model=d_model, max_len=500, dropout=dropout)
         
@@ -337,21 +335,26 @@ class PatchTST(nn.Module):
             dim_feedforward=dim_feedforward,
             dropout=dropout,
             activation='gelu',
-            batch_first=True  # Formato: (patch_len, seq_len, d_model)
+            batch_first=True,  # Formato: (patch_len, seq_len, d_model)
+            norm_first=True
         )
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers, enable_nested_tensor=False)
 
-        # Cabeza de predicción (Flatten Head)
+        # Cabeza por Canal: Proyecta los parches de cada canal a una representación d_model
+        # En vez de un Flatten ciego de (C * num_patches * d_model),
+        # tomamos el último parche + pooling de parches por canal:
+        self.channel_head = nn.Linear(2 * d_model, 1)
+
+        # Cabeza final que combina las variables (input_dim -> output_dim)
         # Si dense_dim es None o <= 0, usamos proyección lineal directa
-        flat_dim = input_dim * self.num_patches * d_model
         self.use_dense_head = dense_dim is not None and dense_dim > 0
         if self.use_dense_head:
-            self.fc1 = nn.Linear(flat_dim, dense_dim)
-            self.activation = nn.GELU()
+            self.fusion = nn.Linear(input_dim, dense_dim)
+            self.act = nn.GELU()
             self.dropout = nn.Dropout(dropout)
-            self.fc2 = nn.Linear(dense_dim, output_dim)
+            self.out_proj = nn.Linear(dense_dim, output_dim)
         else:
-            self.head = nn.Linear(flat_dim, output_dim)
+            self.fusion = nn.Linear(input_dim, output_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x shape de entrada: (B, L, C)
@@ -365,11 +368,22 @@ class PatchTST(nn.Module):
         # Channel Independence: permutamos a (B, C, L) para operar sobre el tiempo por variable
         x = x.permute(0, 2, 1)
 
+        # Padding izquierdo causal si L no encaja de forma exacta con patch_len y stride
+        if L < self.patch_len:
+            pad_len = self.patch_len - L
+            x = nn.functional.pad(x, (pad_len, 0), mode='replicate')
+        else:
+            remainder = (x.shape[-1] - self.patch_len) % self.stride
+            if remainder != 0:
+                pad_len = self.stride - remainder
+                x = nn.functional.pad(x, (pad_len, 0), mode='replicate')
+
         # Extracción de parches: (B, C, num_patches, patch_len)
         patches = x.unfold(dimension=-1, size=self.patch_len, step=self.stride)
+        num_patches = patches.shape[2]
 
         # Aplanamos Batch y Canales para procesar con Channel Independence: (B * C, num_patches, patch_len)
-        patches = patches.contiguous().view(B * C, self.num_patches, self.patch_len)
+        patches = patches.contiguous().view(B * C, num_patches, self.patch_len)
 
         # Patch embedding (proyección lineal)
         out = self.patch_projection(patches)
@@ -378,22 +392,25 @@ class PatchTST(nn.Module):
         out = self.pos_encoder(out)
         
         # Modelado temporal de parches con Multi-Head Self-Attention
-        out = self.transformer_encoder(out)
+        out = self.transformer_encoder(out) # (B * C, num_patches, d_model)
 
-        # Reconstrucción de canales y aplanado para la cabeza
-        # (B, C, num_patches * d_model) -> (B, C * num_patches * d_model)
-        out = out.view(B, C, self.num_patches, self.d_model).flatten(start_dim=1)
+        # Agregación temporal de los parches por canal (último parche + promedio)
+        last_patch = out[:, -1, :]
+        mean_patch = out.mean(dim=1)
+        patch_rep = torch.cat([last_patch, mean_patch], dim=-1)  # (B * C, 2 * d_model)
 
-        # Proyección final
+        # Proyección a representación por canal: (B * C, 1) -> (B, C)
+        channel_scalar = self.channel_head(patch_rep).view(B, C)
+
+        # Fusión multivariante controlada
         if self.use_dense_head:
-            dense = self.fc1(out)
-            dense = self.activation(dense)
-            dense = self.dropout(dense)
-            output = self.fc2(dense)
+            feat = self.act(self.fusion(channel_scalar))
+            feat = self.dropout(feat)
+            output = self.out_proj(feat)
         else:
-            output = self.head(out)
-        return output
+            output = self.fusion(channel_scalar)
 
+        return output
     
 
 

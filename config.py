@@ -12,26 +12,26 @@ TICKER = "^GSPC"  # S&P 500
 # Mejor configuración obtenida del Grid Search para cada modelo (dependiendo del target)
 if TARGET_TYPE == 'future_return':
     BEST_LSTM_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3}
-    BEST_GRU_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3}
-    BEST_TCN_CONFIG = {'num_channels': (64, 64, 64), 'kernel_size': 5, 'dense_dim': 32, 'dropout': 0.2}
-    BEST_ENCODER_CONFIG = {'d_model': 32, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.2}
-    BEST_LSTMATT_CONFIG = {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 16,   'dropout': 0.2}
-    BEST_PATCHTST_CONFIG = {'patch_len': 12, 'stride': 12, 'd_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.2}
-elif TARGET_TYPE == 'excess_direction':
-    BEST_LSTM_CONFIG = {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2}
-    BEST_GRU_CONFIG = {'num_layers': 2, 'hidden_dim': 16, 'dense_dim': 8, 'dropout': 0.2}
+    BEST_GRU_CONFIG = {'num_layers': 2, 'hidden_dim': 32, 'dense_dim': 16, 'dropout': 0.2}
     BEST_TCN_CONFIG = {'num_channels': (32, 32, 16, 16), 'kernel_size': 3, 'dense_dim': 16, 'dropout': 0.2}
+    BEST_ENCODER_CONFIG = {'d_model': 32, 'nhead': 2, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 8, 'dropout': 0.2}
+    BEST_LSTMATT_CONFIG = {'num_layers': 2, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.3}
+    BEST_PATCHTST_CONFIG = {'patch_len': 4, 'stride': 4, 'd_model': 16, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 32, 'dense_dim': 8, 'dropout': 0.2}
+elif TARGET_TYPE == 'excess_direction':
+    BEST_LSTM_CONFIG = {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 8, 'dropout': 0.2}
+    BEST_GRU_CONFIG = {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 8, 'dropout': 0.2}
+    BEST_TCN_CONFIG = {'num_channels': (32, 16, 8), 'kernel_size': 3, 'dense_dim': 8, 'dropout': 0.2}
     BEST_ENCODER_CONFIG = {'d_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.3}
-    BEST_LSTMATT_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.2}
-    BEST_PATCHTST_CONFIG = {'patch_len': 8, 'stride': 4, 'd_model': 32, 'nhead': 4, 'num_layers': 2, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.3}
+    BEST_LSTMATT_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3}
+    BEST_PATCHTST_CONFIG = {'patch_len': 4, 'stride': 2, 'd_model': 16, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 32, 'dense_dim': 8, 'dropout': 0.2}
 elif TARGET_TYPE == 'volatility':
-    BEST_LSTM_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3}
-    BEST_GRU_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 16, 'dropout': 0.2}
+    BEST_LSTM_CONFIG = {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': 8, 'dropout': 0.2}
+    BEST_GRU_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3}
     BEST_TCN_CONFIG = {'num_channels': (64, 64, 64), 'kernel_size': 3, 'dense_dim': 32, 'dropout': 0.3}
-    BEST_ENCODER_CONFIG = {'d_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.3}
-    BEST_LSTMATT_CONFIG = {'num_layers': 1, 'hidden_dim': 32, 'dense_dim': None, 'dropout': 0.2}
-    BEST_PATCHTST_CONFIG = {'patch_len': 8, 'stride': 4, 'd_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': None, 'dropout': 0.2}
-
+    BEST_ENCODER_CONFIG = {'d_model': 32, 'nhead': 2, 'num_layers': 1, 'dim_feedforward': 32, 'dense_dim': 8, 'dropout': 0.2}
+    BEST_LSTMATT_CONFIG = {'num_layers': 1, 'hidden_dim': 64, 'dense_dim': 32, 'dropout': 0.3}
+    BEST_PATCHTST_CONFIG = {'patch_len': 12, 'stride': 12, 'd_model': 32, 'nhead': 4, 'num_layers': 1, 'dim_feedforward': 64, 'dense_dim': 16, 'dropout': 0.2}
+    
 # Hiperparámetros de entrenamiento
 BATCH_SIZE = 32
 EPOCHS = 40
@@ -47,7 +47,7 @@ END_DATE = '2026-05-01'
 N_SPLITS = 4
 TRAIN_SIZE = 2016
 TEST_SIZE = 504
-VAL_SIZE = 126
+VAL_SIZE = 252
 WINDOW_TYPE = 'expanding'
 
 # Parámetros del Backtest
