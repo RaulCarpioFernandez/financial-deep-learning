@@ -46,13 +46,4 @@ financial-deep-learning-tfm/
 ├── eval_baselines.py         # Evaluación de los modelos de baseline
 ├── validation.py             # Motor Purged Walk-Forward CV y evaluación del rendimiento del modelo
 ├── backtesting.py            # Asignación de capital híbrida, métricas y multi-benchmark
-├── main.py                   # Script de orquestación y ejecución comparativa
-│
-├── data/                     # Caché local de series históricas en CSV
-└── results/                  # Guardado automático de resultados
-    └── future_return/        # Carpeta para los resultados del target de Future Return
-    └── excess_direction/     # Carpeta para los resultados del target de Excess Direction
-    └── volatility/           # Carpeta para los resultados del target de Volatility
-        ├── figures/              # Curvas ROC, Precision-Recall y Curvas de Riqueza (PNG/PDF)
-        ├── metrics/              # Resúmenes tabulares (CSV) y snapshots completos (JSON)
-        └── models/               # Checkpoints de pesos por pliegue (.pt)
+└── main.py                   # Script de orquestación y ejecución comparativa
